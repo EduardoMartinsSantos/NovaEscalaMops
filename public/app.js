@@ -368,7 +368,7 @@ function exportarExcel() {
     const resto = diasCel || Array.from({ length: dias.length }, () => ({ v: '', e: XL.grupo }));
     linhas.push({ altura: 20, celulas: [{ v: titulo.toUpperCase(), e: { ...XL.grupo, align: 'left' } }, ...bloco, ...resto] });
   };
-  const infoColaborador = (c, escala) => {
+  const infoColaborador = (c, escala, horario) => {
     const torre = porId(state.torres, c.torre_id);
     const turno = porId(state.turnos, c.turno_id);
     const mesa = porId(state.mesas, c.mesa_id);
@@ -377,7 +377,7 @@ function exportarExcel() {
       { v: torre?.codigo || '' },
       { v: turno?.codigo || '' },
       { v: mesa?.codigo || '' },
-      { v: horarioDoTurno(turno) },
+      { v: horario ?? horarioDoTurno(turno) },
       escala || { v: (turno?.padrao || '').toUpperCase() },
     ];
   };
@@ -448,7 +448,7 @@ function exportarExcel() {
     for (const c of habilitados) {
       linhas.push({
         celulas: [
-          ...infoColaborador(c, { v: fmtHoras(totalDe(c.id)), e: XL.total }),
+          ...infoColaborador(c, { v: fmtHoras(totalDe(c.id)), e: XL.total }, horarioSobreaviso(t)),
           ...dias.map((d) => {
             const s = porPessoa.get(`${c.id}|${d}`);
             if (s) return { v: s.horas != null ? fmtHoras(s.horas) : 'SOBREAVISO', e: corSA };
@@ -483,7 +483,7 @@ function exportarExcel() {
 
 const SEMANA_ABREV = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
-function nomePlanilha(c, { escala } = {}) {
+function nomePlanilha(c, { escala, horario } = {}) {
   const torre = porId(state.torres, c.torre_id);
   const turno = porId(state.turnos, c.turno_id);
   const mesa = porId(state.mesas, c.mesa_id);
@@ -492,7 +492,7 @@ function nomePlanilha(c, { escala } = {}) {
     <span>${esc(torre?.codigo || '')}</span>
     <span>${esc(turno?.codigo || '')}</span>
     <span>${esc(mesa?.codigo || '')}</span>
-    <span>${esc(horarioDoTurno(turno))}</span>
+    <span>${esc(horario ?? horarioDoTurno(turno))}</span>
     <span>${escala ?? esc((turno?.padrao || '').toUpperCase())}</span>
   </div>`;
 }
@@ -503,6 +503,8 @@ function classePlanilha(cel) {
 }
 
 const horarioDoTurno = (t) => (t ? `${t.inicio} às ${t.fim}` : '');
+// Horário do sobreaviso da torre (Cadastros → Sobreaviso); '—' se não definido.
+const horarioSobreaviso = (t) => (t?.sobreaviso_inicio ? `${t.sobreaviso_inicio} às ${t.sobreaviso_fim}` : '—');
 
 // Texto do quadrado do dia: vazio no turno da própria pessoa (o horário fica na coluna Horário);
 // o código do turno quando o dia é num turno diferente do cadastrado; férias e atestado por extenso.
@@ -689,7 +691,7 @@ function renderGrade() {
     for (const c of habilitados) {
       const total = totalDe(c.id);
       const totalTxt = `<strong class="sa-total" title="Total de horas de sobreaviso no mês">${fmtHoras(total)}</strong>`;
-      html += `<tr class="sa-row"><td class="name">${nomePlanilha(c, { escala: totalTxt })}</td>${dias
+      html += `<tr class="sa-row"><td class="name">${nomePlanilha(c, { escala: totalTxt, horario: horarioSobreaviso(t) })}</td>${dias
         .map((d) => {
           const s = porPessoa.get(`${c.id}|${d}`);
           const aus = ausencia(c.id, d);
@@ -1682,12 +1684,15 @@ function viewSobreaviso() {
     </div>
     <div class="card list-wrap" id="lista">${
       torresSA.length
-        ? `<table class="list"><thead><tr><th>Torre</th><th>Nome</th><th>Série fixa</th><th>Habilitados</th><th>Na escala</th></tr></thead>
+        ? `<table class="list"><thead><tr><th>Torre</th><th>Nome</th><th>Horário</th><th>Série fixa</th><th>Habilitados</th><th>Na escala</th></tr></thead>
           <tbody>${torresSA
             .map(
               (t) => `<tr class="${t.ativo ? '' : 'inativo'}">
                 <td>${tagSobreaviso(t)}</td>
                 <td>${esc(t.nome)}</td>
+                <td class="nowrap">${
+                  t.sobreaviso_inicio ? esc(horarioSobreaviso(t)) : '<span class="muted">não definido</span>'
+                } <button class="ghost icon" data-horario="${t.id}" title="Editar o horário do sobreaviso ${esc(t.codigo)}">✎</button></td>
                 <td>${t.padrao_sobreaviso ? esc(descreverSerie(t.padrao_sobreaviso)) : '<span class="muted">—</span>'}</td>
                 <td>${habilitados(t)}</td>
                 <td><label class="interruptor" title="Mostrar ou ocultar o sobreaviso ${esc(t.codigo)} na escala">
@@ -1700,6 +1705,10 @@ function viewSobreaviso() {
         : '<div class="empty">Nenhuma torre com sobreaviso. Marque "Possui sobreaviso" em Cadastros → Torres.</div>'
     }</div>`;
 
+  $('#lista').onclick = (e) => {
+    const b = e.target.closest('[data-horario]');
+    if (b) dialogHorarioSobreaviso(porId(state.torres, Number(b.dataset.horario)));
+  };
   $('#lista').onchange = async (e) => {
     const inp = e.target.closest('[data-sa-visivel]');
     if (!inp) return;
@@ -1714,6 +1723,24 @@ function viewSobreaviso() {
     }
     viewSobreaviso();
   };
+}
+
+function dialogHorarioSobreaviso(t) {
+  abrirDialog({
+    titulo: `Horário do sobreaviso ${t.codigo}`,
+    corpo: `
+      <div class="row">
+        <label class="field"><span>Início</span><input type="time" name="inicio" value="${esc(t.sobreaviso_inicio)}"></label>
+        <label class="field"><span>Fim</span><input type="time" name="fim" value="${esc(t.sobreaviso_fim)}"></label>
+      </div>
+      <p class="hint">Aparece na coluna Horário da tabela de sobreaviso, na escala e no Excel. Deixe os dois vazios para não exibir.</p>`,
+    async onSubmit(form) {
+      await api('PUT', `/torres/${t.id}`, { ...t, sobreaviso_inicio: valor(form, 'inicio'), sobreaviso_fim: valor(form, 'fim') });
+      await carregarBase();
+      viewSobreaviso();
+      toast(`Horário do sobreaviso ${t.codigo} salvo.`);
+    },
+  });
 }
 
 // ---------- login e sessão ----------
