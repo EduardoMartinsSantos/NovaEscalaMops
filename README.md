@@ -21,6 +21,22 @@ npm run dev            # reinicia ao salvar
 
 As tabelas são criadas sozinhas na primeira requisição.
 
+## Ambientes
+
+| Branch | Onde roda | Banco |
+|---|---|---|
+| `main` | Produção — https://nova-escala-mops.vercel.app | Neon `nova-escala-db` |
+| `dev` | Preview da branch dev (deploy a cada push) | Neon `nova-escala-dev` (testes) |
+| local | `npm start` | o do `.env` (testes); o `.env` prevalece sobre o `.env.local` |
+
+Na Vercel, a `DATABASE_URL` da branch `dev` é uma variável de Preview restrita a essa branch, que substitui a de produção.
+
+Para atualizar o banco de testes com os dados de produção (apaga tudo no destino):
+
+```bash
+ORIGEM_URL="<url de produção>" DESTINO_URL="<url de testes>" node scripts/copiar-banco.js
+```
+
 ## Publicar na Vercel
 
 1. Importe o repositório em https://vercel.com/new (Framework Preset: **Other**, sem build).

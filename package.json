@@ -8,10 +8,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "start": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server.js",
-    "dev": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --watch server.js",
-    "migrar": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/migrar-sqlite-para-postgres.js",
-    "importar-notion": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/importar-notion.js"
+    "start": "node --env-file-if-exists=.env.local --env-file-if-exists=.env server.js",
+    "dev": "node --env-file-if-exists=.env.local --env-file-if-exists=.env --watch server.js",
+    "migrar": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/migrar-sqlite-para-postgres.js",
+    "importar-notion": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/importar-notion.js"
   },
   "dependencies": {
     "pg": "^8.23.0"
