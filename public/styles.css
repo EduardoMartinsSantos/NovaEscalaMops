@@ -359,8 +359,8 @@ table.list.editavel.travada td.ed select:disabled {
 table.list.editavel.travada td.ed select.tag-sel:disabled { border-left: 4px solid var(--c) !important; }
 table.list.editavel.travada td.ed input[type=checkbox]:disabled { opacity: 1; cursor: default; }
 
-/* Sobreaviso: tabela própria abaixo da escala */
-.grid-wrap .sa-titulo {
+/* Tabelas extras da escala (12x36, Sobreaviso): título e separação */
+.grid-wrap .tabela-titulo {
   position: sticky; left: 0; width: max-content; margin-top: 28px; padding: 10px 12px 8px;
   font-size: 15px; font-weight: 700; letter-spacing: .02em;
 }

@@ -421,48 +421,55 @@ function exportarExcel() {
     return { v: AUSENCIAS[x.tipo].nome.toUpperCase(), e: x.tipo === 'FERIAS' ? XL.ferias : XL.atestado };
   };
 
-  // Cabeçalho
-  linhas.push({
-    altura: 30,
-    celulas: [
-      ...['NOME', 'TORRE', 'TURNO', 'MESA', 'ESCALA'].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
-      ...dias.map((d) => ({ v: `${SEMANA_ABREV[diaSemana(d)]}\n${d.slice(8)}/${d.slice(5, 7)}`, e: XL.cabecalho })),
-    ],
-  });
-
-  // Grupos (mesmo agrupamento e filtros da tela)
-  for (const { titulo, grupo } of gruposDaGrade(colabs)) {
-    linhaGrupo(`${titulo} (${grupo.length})`);
-    for (const c of grupo) {
-      linhas.push({ celulas: [...infoColaborador(c), ...dias.map((d) => celulaDia(cel.get(`${c.id}|${d}`), d))] });
+  const cabecalho = (ultima) =>
+    linhas.push({
+      altura: 30,
+      celulas: [
+        ...['NOME', 'TORRE', 'TURNO', 'MESA', ultima].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
+        ...dias.map((d) => ({ v: `${SEMANA_ABREV[diaSemana(d)]}\n${d.slice(8)}/${d.slice(5, 7)}`, e: XL.cabecalho })),
+      ],
+    });
+  const tituloBloco = (texto) => {
+    linhas.push({ altura: 12, celulas: [] });
+    linhas.push({ altura: 22, celulas: [{ v: texto, e: { bold: true, size: 13, align: 'left' } }] });
+  };
+  // Grupos + linha "Em serviço" (contando só os colaboradores do bloco).
+  const blocoEscala = (grupos, membros) => {
+    for (const { titulo, grupo } of grupos) {
+      linhaGrupo(`${titulo} (${grupo.length})`);
+      for (const c of grupo) {
+        linhas.push({ celulas: [...infoColaborador(c), ...dias.map((d) => celulaDia(cel.get(`${c.id}|${d}`), d))] });
+      }
     }
-  }
+    mesclar.push({ linha: linhas.length, de: 0, ate: INFO - 1 });
+    linhas.push({
+      celulas: [
+        { v: 'EM SERVIÇO', e: { bold: true, align: 'left' } },
+        ...Array.from({ length: INFO - 1 }, () => ({ v: '' })),
+        ...dias.map((d) => ({
+          v: membros.filter((c) => cel.get(`${c.id}|${d}`)?.tipo === 'TURNO').length,
+          e: { bold: true, ...(fimDeSemana(d) ? XL.fimDeSemana : {}) },
+        })),
+      ],
+    });
+  };
 
-  // Em serviço
-  mesclar.push({ linha: linhas.length, de: 0, ate: INFO - 1 });
-  linhas.push({
-    celulas: [
-      { v: 'EM SERVIÇO', e: { bold: true, align: 'left' } },
-      ...Array.from({ length: INFO - 1 }, () => ({ v: '' })),
-      ...dias.map((d) => ({
-        v: colabs.filter((c) => cel.get(`${c.id}|${d}`)?.tipo === 'TURNO').length,
-        e: { bold: true, ...(fimDeSemana(d) ? XL.fimDeSemana : {}) },
-      })),
-    ],
-  });
+  // Escala principal (mesmo agrupamento e filtros da tela) e, abaixo, o 12x36.
+  const principais = colabs.filter((c) => !eh12x36(c));
+  const revezamento = colabs.filter(eh12x36);
+  cabecalho('ESCALA');
+  blocoEscala(gruposDaGrade(principais), principais);
+  if (revezamento.length) {
+    tituloBloco('12X36');
+    cabecalho('ESCALA');
+    blocoEscala(grupos12x36(revezamento), revezamento);
+  }
 
   // Sobreaviso: bloco próprio abaixo da escala, com título e cabeçalho (como na tela).
   const secoes = secoesSobreaviso();
   if (secoes.length) {
-    linhas.push({ altura: 12, celulas: [] });
-    linhas.push({ altura: 22, celulas: [{ v: 'SOBREAVISO', e: { bold: true, size: 13, align: 'left' } }] });
-    linhas.push({
-      altura: 30,
-      celulas: [
-        ...['NOME', 'TORRE', 'TURNO', 'MESA', 'HORAS'].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
-        ...dias.map((d) => ({ v: `${SEMANA_ABREV[diaSemana(d)]}\n${d.slice(8)}/${d.slice(5, 7)}`, e: XL.cabecalho })),
-      ],
-    });
+    tituloBloco('SOBREAVISO');
+    cabecalho('HORAS');
   }
   const ausente = (id, d) => ['FERIAS', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
   for (const { torre: t, porPessoa, cobertos, habilitados, descobertos, totalTorre, totalDe } of secoes) {
@@ -551,6 +558,27 @@ function iniciais(nome) {
 // Por turno: um grupo por turno, exceto os 12x36, que ficam juntos num grupo por torre (12x36 N1, 12x36 N2…).
 // Grupos na ordem do padrão (5x2, 6x1, 12x36…) e do horário; colaboradores pela torre (N1, N2…) e nome.
 // Nos grupos 12x36, os colaboradores vêm primeiro pelo turno (TPA, TPB…).
+const eh12x36 = (c) => porId(state.turnos, c.turno_id)?.padrao === '12x36';
+
+// Tabela 12x36: um grupo por torre (12x36 N1, 12x36 N2…), na ordem das torres; dentro, por turno (TPA, TPB…) e nome.
+function grupos12x36(colabs) {
+  const porCodigo = (a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true });
+  const codigoTurno = (c) => porId(state.turnos, c.turno_id)?.codigo || '';
+  return state.torres
+    .map((torre) => {
+      const membros = colabs
+        .filter((c) => c.torre_id === torre.id)
+        .sort((a, b) => codigoTurno(a).localeCompare(codigoTurno(b), 'pt-BR', { numeric: true }) || a.nome.localeCompare(b.nome));
+      const turnosDoGrupo = state.turnos.filter((t) => membros.some((c) => c.turno_id === t.id)).sort(porCodigo);
+      return {
+        titulo: `12X36 ${torre.codigo} — ${turnosDoGrupo.map((t) => t.codigo).join(' · ')}`,
+        cabecalho: `<strong>12x36</strong> ${tagTorre(torre)} ${turnosDoGrupo.map(tagTurno).join(' ')}`,
+        grupo: membros,
+      };
+    })
+    .filter((g) => g.grupo.length);
+}
+
 function gruposDaGrade(colabs) {
   if (state.agrupar === 'turno') {
     const ordemTorre = new Map(state.torres.map((t, i) => [t.id, i]));
@@ -560,34 +588,14 @@ function gruposDaGrade(colabs) {
       (a, b) => ORDEM_PADRAO.indexOf(a.padrao) - ORDEM_PADRAO.indexOf(b.padrao) || a.inicio.localeCompare(b.inicio)
     );
 
-    const grupos = [];
-    const revezamento = turnos.filter((t) => t.padrao === '12x36');
-    for (const t of turnos) {
-      if (t.padrao === '12x36') {
-        if (t !== revezamento[0]) continue; // os grupos 12x36 entram uma vez, na posição do primeiro
-        // Um grupo 12x36 por torre (12x36 N1, 12x36 N2…), na ordem das torres; dentro, por turno (TPA, TPB…) e nome.
-        const ids = new Set(revezamento.map((x) => x.id));
-        const porCodigo = (a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true });
-        const codigoTurno = (c) => porId(state.turnos, c.turno_id)?.codigo || '';
-        for (const torre of state.torres) {
-          const membros = colabs
-            .filter((c) => ids.has(c.turno_id) && c.torre_id === torre.id)
-            .sort((a, b) => codigoTurno(a).localeCompare(codigoTurno(b), 'pt-BR', { numeric: true }) || a.nome.localeCompare(b.nome));
-          const turnosDoGrupo = revezamento.filter((x) => membros.some((c) => c.turno_id === x.id)).sort(porCodigo);
-          grupos.push({
-            titulo: `12X36 ${torre.codigo} — ${turnosDoGrupo.map((x) => x.codigo).join(' · ')}`,
-            cabecalho: `<strong>12x36</strong> ${tagTorre(torre)} ${turnosDoGrupo.map(tagTurno).join(' ')}`,
-            grupo: membros,
-          });
-        }
-        continue;
-      }
-      grupos.push({
+    // Os 12x36 ficam na tabela própria (grupos12x36).
+    const grupos = turnos
+      .filter((t) => t.padrao !== '12x36')
+      .map((t) => ({
         titulo: `${t.codigo} — ${t.nome} (${t.inicio} às ${t.fim})`,
         cabecalho: `${tagTurno(t)} ${esc(t.nome)} <span class="muted">${t.inicio} às ${t.fim}</span>`,
         grupo: colabs.filter((c) => c.turno_id === t.id).sort(porTorre),
-      });
-    }
+      }));
     return grupos.filter((g) => g.grupo.length);
   }
   // Por torre: dentro de cada torre, colaboradores pela ordem dos turnos e depois nome.
@@ -660,36 +668,40 @@ function renderGrade() {
         : `<th class="${clsDia(d)}">${Number(d.slice(8))}<small>${LETRAS_SEMANA[diaSemana(d)]}</small></th>`
     )
     .join('');
-  let html = `<table class="grid ${planilha ? 'planilha' : ''}"><thead><tr><th class="name">${cabNome}</th>${cabDias}</tr></thead><tbody>`;
-
-  if (!colabs.length) {
-    html += `<tr><td class="name muted" colspan="1">Nenhum colaborador.</td><td colspan="${dias.length}"></td></tr>`;
-  }
-
-  for (const { cabecalho, grupo } of gruposDaGrade(colabs)) {
-    html += `<tr class="group"><td class="name">${cabecalho} <span class="muted">(${grupo.length})</span></td><td colspan="${dias.length}"></td></tr>`;
-    for (const c of grupo) {
-      html += `<tr><td class="name">${planilha ? nomePlanilha(c) : `<div class="n" title="${esc(c.nome)}">${esc(c.nome)}</div>${tagsColaborador(c)}`}</td>`;
-      for (const d of dias) {
-        const x = cel.get(`${c.id}|${d}`);
-        html += planilha
-          ? `<td class="cell ${clsDia(d)} ${classePlanilha(x)}" data-c="${c.id}" data-d="${d}" title="${esc(tituloCelula(x))}">${textoPlanilha(x)}</td>`
-          : `<td class="cell ${clsDia(d)}" data-c="${c.id}" data-d="${d}">${chipCelula(x)}</td>`;
+  // Uma tabela de escala (cabeçalho, grupos e a linha "Em serviço" dos seus colaboradores).
+  const tabelaEscala = (grupos, membros, vazio) => {
+    let t = `<table class="grid ${planilha ? 'planilha' : ''}"><thead><tr><th class="name">${cabNome}</th>${cabDias}</tr></thead><tbody>`;
+    if (vazio) t += `<tr><td class="name muted">${vazio}</td><td colspan="${dias.length}"></td></tr>`;
+    for (const { cabecalho, grupo } of grupos) {
+      t += `<tr class="group"><td class="name">${cabecalho} <span class="muted">(${grupo.length})</span></td><td colspan="${dias.length}"></td></tr>`;
+      for (const c of grupo) {
+        t += `<tr><td class="name">${planilha ? nomePlanilha(c) : `<div class="n" title="${esc(c.nome)}">${esc(c.nome)}</div>${tagsColaborador(c)}`}</td>`;
+        for (const d of dias) {
+          const x = cel.get(`${c.id}|${d}`);
+          t += planilha
+            ? `<td class="cell ${clsDia(d)} ${classePlanilha(x)}" data-c="${c.id}" data-d="${d}" title="${esc(tituloCelula(x))}">${textoPlanilha(x)}</td>`
+            : `<td class="cell ${clsDia(d)}" data-c="${c.id}" data-d="${d}">${chipCelula(x)}</td>`;
+        }
+        t += '</tr>';
       }
-      html += '</tr>';
     }
+    // Quantos estão em turno por dia (entre os colaboradores desta tabela).
+    t += `</tbody><tfoot><tr class="sep"><td class="name">Em serviço</td>${dias
+      .map((d) => {
+        const n = membros.filter((c) => cel.get(`${c.id}|${d}`)?.tipo === 'TURNO').length;
+        return `<td class="${clsDia(d)}">${n || '<span class="muted">0</span>'}</td>`;
+      })
+      .join('')}</tr></tfoot></table>`;
+    return t;
+  };
+
+  // Escala principal e, abaixo, o 12x36 em tabela própria.
+  const principais = colabs.filter((c) => !eh12x36(c));
+  const revezamento = colabs.filter(eh12x36);
+  let html = tabelaEscala(gruposDaGrade(principais), principais, colabs.length ? '' : 'Nenhum colaborador.');
+  if (revezamento.length) {
+    html += `<div class="tabela-titulo">12x36</div>${tabelaEscala(grupos12x36(revezamento), revezamento)}`;
   }
-  html += '</tbody><tfoot>';
-
-  // Quantos estão em turno por dia (entre os visíveis).
-  html += `<tr class="sep"><td class="name">Em serviço</td>${dias
-    .map((d) => {
-      const n = colabs.filter((c) => cel.get(`${c.id}|${d}`)?.tipo === 'TURNO').length;
-      return `<td class="${clsDia(d)}">${n || '<span class="muted">0</span>'}</td>`;
-    })
-    .join('')}</tr>`;
-
-  html += '</tfoot></table>';
 
   // Sobreaviso: tabela própria abaixo da escala, com o mesmo cabeçalho de dias (as colunas ficam alinhadas).
   // Cada colaborador habilitado tem uma linha, com as horas de cada dia e o total do mês.
@@ -698,7 +710,7 @@ function renderGrade() {
     const cabSA = planilha
       ? '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horas</span></div>'
       : 'Colaborador';
-    html += `<div class="sa-titulo">Sobreaviso</div>
+    html += `<div class="tabela-titulo">Sobreaviso</div>
       <table class="grid sa-tabela ${planilha ? 'planilha' : ''}"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
   }
   const ausencia = (id, d) => ['FERIAS', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
