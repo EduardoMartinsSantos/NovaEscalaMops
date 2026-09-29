@@ -451,13 +451,24 @@ function exportarExcel() {
     ],
   });
 
-  // Sobreaviso
+  // Sobreaviso: bloco próprio abaixo da escala, com título e cabeçalho (como na tela).
+  const secoes = secoesSobreaviso();
+  if (secoes.length) {
+    linhas.push({ altura: 12, celulas: [] });
+    linhas.push({ altura: 22, celulas: [{ v: 'SOBREAVISO', e: { bold: true, size: 13, align: 'left' } }] });
+    linhas.push({
+      altura: 30,
+      celulas: [
+        ...['NOME', 'TORRE', 'TURNO', 'MESA', 'HORAS'].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
+        ...dias.map((d) => ({ v: `${SEMANA_ABREV[diaSemana(d)]}\n${d.slice(8)}/${d.slice(5, 7)}`, e: XL.cabecalho })),
+      ],
+    });
+  }
   const ausente = (id, d) => ['FERIAS', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
-  for (const { torre: t, porPessoa, cobertos, habilitados, descobertos, totalTorre, totalDe } of secoesSobreaviso()) {
+  for (const { torre: t, porPessoa, cobertos, habilitados, descobertos, totalTorre, totalDe } of secoes) {
     const titulo =
       `Sobreaviso ${t.codigo} (${habilitados.length}${totalTorre ? ` · ${fmtHoras(totalTorre)}` : ''})` +
       (descobertos ? ` — ${descobertos} dia(s) sem ninguém` : '');
-    linhas.push({ altura: 12, celulas: [] }); // espaço entre as demais linhas e o sobreaviso
     linhaGrupo(titulo, dias.map((d) => ({ v: '', e: cobertos.has(d) ? XL.grupo : XL.semSobreaviso })));
     const corSA = { bold: true, size: 9, bg: misturarComBranco(t.cor, 0.3) };
     for (const c of habilitados) {
@@ -642,13 +653,14 @@ function renderGrade() {
   const cabNome = planilha
     ? '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Escala</span></div>'
     : 'Colaborador';
-  let html = `<table class="grid ${planilha ? 'planilha' : ''}"><thead><tr><th class="name">${cabNome}</th>${dias
+  const cabDias = dias
     .map((d) =>
       planilha
         ? `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`
         : `<th class="${clsDia(d)}">${Number(d.slice(8))}<small>${LETRAS_SEMANA[diaSemana(d)]}</small></th>`
     )
-    .join('')}</tr></thead><tbody>`;
+    .join('');
+  let html = `<table class="grid ${planilha ? 'planilha' : ''}"><thead><tr><th class="name">${cabNome}</th>${cabDias}</tr></thead><tbody>`;
 
   if (!colabs.length) {
     html += `<tr><td class="name muted" colspan="1">Nenhum colaborador.</td><td colspan="${dias.length}"></td></tr>`;
@@ -677,11 +689,20 @@ function renderGrade() {
     })
     .join('')}</tr>`;
 
-  // Sobreaviso: cada colaborador habilitado aparece de novo aqui, uma linha por pessoa, com as horas de cada dia
-  // e o total do mês.
+  html += '</tfoot></table>';
+
+  // Sobreaviso: tabela própria abaixo da escala, com o mesmo cabeçalho de dias (as colunas ficam alinhadas).
+  // Cada colaborador habilitado tem uma linha, com as horas de cada dia e o total do mês.
+  const secoes = secoesSobreaviso();
+  if (secoes.length) {
+    const cabSA = planilha
+      ? '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horas</span></div>'
+      : 'Colaborador';
+    html += `<div class="sa-titulo">Sobreaviso</div>
+      <table class="grid sa-tabela ${planilha ? 'planilha' : ''}"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
+  }
   const ausencia = (id, d) => ['FERIAS', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
-  for (const { torre: t, porPessoa, cobertos, habilitados, descobertos, totalTorre, totalDe } of secoesSobreaviso()) {
-    html += `<tr class="sa-espaco" aria-hidden="true"><td colspan="${dias.length + 1}"></td></tr>`;
+  for (const { torre: t, porPessoa, cobertos, habilitados, descobertos, totalTorre, totalDe } of secoes) {
     html += `<tr class="group sa-group"><td class="name">Sobreaviso ${tagSobreaviso(t)} <span class="muted">(${habilitados.length}${
       totalTorre ? ` · ${fmtHoras(totalTorre)}` : ''
     })</span>${descobertos ? ` <span class="sa-alerta">${descobertos} dia(s) sem ninguém</span>` : ''}</td>${dias
@@ -711,7 +732,7 @@ function renderGrade() {
         .join('')}</tr>`;
     }
   }
-  html += '</tfoot></table>';
+  if (secoes.length) html += '</tbody></table>';
   wrap.innerHTML = html;
 }
 
