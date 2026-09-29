@@ -69,4 +69,4 @@ npm run migrar -- --substituir  # apaga o que houver no Postgres e copia de novo
 
 - Clique numa célula para editar, ou escolha um **pincel** na legenda e arraste sobre as células.
 - **Sobreaviso**: pincel configurável (horas por dia) e **Série fixa** da torre, com prévia ao passar o mouse.
-- **Exportar Excel** no mesmo formato da exibição Planilha; **CSV** separado por `;`.
+- **Exportar Excel** no mesmo formato da tela; **CSV** separado por `;`.

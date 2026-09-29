@@ -48,7 +48,6 @@ function rotuloMes(mes) {
   const [a, m] = mes.split('-').map(Number);
   return new Date(a, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
-const LETRAS_SEMANA = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 const diaSemana = (data) => new Date(data + 'T12:00:00').getDay();
 
 function duracao(inicio, fim) {
@@ -94,7 +93,6 @@ const state = {
   mes: mesAtual(),
   filtro: { torre: '', turno: '', busca: '' },
   agrupar: lerPreferencia('agrupar', 'torre'), // 'torre' | 'turno'
-  exibicao: lerPreferencia('exibicao', 'compacta'), // 'compacta' | 'planilha'
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
   filtroColab: { torre: '', turno: '', mesa: '', sa: '', busca: '' },
@@ -130,12 +128,6 @@ function tagTurno(t) {
 }
 const tagSobreaviso = (t) => (t ? tagTorre(t, 'sa') : '');
 const tagMesa = (m) => (m ? tagTorre(m, 'mesa') : '');
-
-function tagsColaborador(c) {
-  return `<div class="tags">${tagTorre(porId(state.torres, c.torre_id))}${tagTurno(porId(state.turnos, c.turno_id))}${tagMesa(
-    porId(state.mesas, c.mesa_id)
-  )}${tagSobreaviso(porId(state.torres, c.sobreaviso_torre_id))}</div>`;
-}
 
 // Opções de select: itens ativos + o valor atual mesmo que esteja inativo.
 function opcoes(lista, atual, rotulo, vazio) {
@@ -278,11 +270,6 @@ function viewEscala() {
         <button data-g="torre" class="${state.agrupar === 'torre' ? 'active' : ''}">Torre</button>
         <button data-g="turno" class="${state.agrupar === 'turno' ? 'active' : ''}">Turno</button>
       </div>
-      <div class="segmented" id="exibicao" role="group" aria-label="Exibição">
-        <span>Exibição</span>
-        <button data-x="compacta" class="${state.exibicao === 'compacta' ? 'active' : ''}">Compacta</button>
-        <button data-x="planilha" class="${state.exibicao === 'planilha' ? 'active' : ''}">Planilha</button>
-      </div>
       <span class="spacer"></span>
       <button id="btn-excel" class="primary">Exportar Excel</button>
       <a class="btn" id="btn-exportar" title="Exportar em CSV (texto simples)">CSV</a>
@@ -302,14 +289,6 @@ function viewEscala() {
     state.agrupar = b.dataset.g;
     salvarPreferencia('agrupar', state.agrupar);
     $('#agrupar').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
-    renderGrade();
-  };
-  $('#exibicao').onclick = (e) => {
-    const b = e.target.closest('button[data-x]');
-    if (!b || b.dataset.x === state.exibicao) return;
-    state.exibicao = b.dataset.x;
-    salvarPreferencia('exibicao', state.exibicao);
-    $('#exibicao').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
     renderGrade();
   };
 
@@ -347,17 +326,7 @@ function colaboradoresVisiveis() {
   );
 }
 
-function chipCelula(cel) {
-  if (!cel) return '';
-  if (cel.tipo === 'TURNO') {
-    const t = porId(state.turnos, cel.turno_id);
-    return t ? `<span class="chip" style="--c:${esc(t.cor)}">${esc(t.codigo)}</span>` : '';
-  }
-  const a = AUSENCIAS[cel.tipo];
-  return `<span class="chip ${a.cls}">${a.sigla}</span>`;
-}
-
-// ----- Exportar Excel: mesma visualização da exibição Planilha (grupos, filtros, cores e sobreaviso) -----
+// ----- Exportar Excel: mesma visualização da tela (grupos, filtros, cores, 12x36 e sobreaviso) -----
 
 // Mistura a cor com branco: pct = quanto da cor original fica (0 a 1).
 function misturarComBranco(hex, pct) {
@@ -366,7 +335,7 @@ function misturarComBranco(hex, pct) {
   return `#${canal((n >> 16) & 255)}${canal((n >> 8) & 255)}${canal(n & 255)}`;
 }
 
-// Mesmas cores da exibição Planilha (tema claro).
+// Mesmas cores da grade da escala (tema claro).
 const XL = {
   cabecalho: { bold: true, color: '#FFFFFF', bg: '#1F3B64', wrap: true },
   grupo: { bold: true, color: '#FFFFFF', bg: '#A3A3A3' },
@@ -509,7 +478,7 @@ function exportarExcel() {
   toast('Excel gerado.');
 }
 
-// ----- exibição "planilha": horário por extenso, trabalho em verde e folga em vermelho -----
+// ----- grade da escala: horário por extenso, trabalho em verde e folga em vermelho -----
 
 const SEMANA_ABREV = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
@@ -657,30 +626,21 @@ function renderGrade() {
     return [w === 0 || w === 6 ? 'we' : '', d === hoje ? 'hoje' : ''].join(' ');
   };
 
-  const planilha = state.exibicao === 'planilha';
-  const cabNome = planilha
-    ? '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Escala</span></div>'
-    : 'Colaborador';
+  const cabNome = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Escala</span></div>';
   const cabDias = dias
-    .map((d) =>
-      planilha
-        ? `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`
-        : `<th class="${clsDia(d)}">${Number(d.slice(8))}<small>${LETRAS_SEMANA[diaSemana(d)]}</small></th>`
-    )
+    .map((d) => `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
   // Uma tabela de escala (cabeçalho, grupos e a linha "Em serviço" dos seus colaboradores).
   const tabelaEscala = (grupos, membros, vazio) => {
-    let t = `<table class="grid ${planilha ? 'planilha' : ''}"><thead><tr><th class="name">${cabNome}</th>${cabDias}</tr></thead><tbody>`;
+    let t = `<table class="grid planilha"><thead><tr><th class="name">${cabNome}</th>${cabDias}</tr></thead><tbody>`;
     if (vazio) t += `<tr><td class="name muted">${vazio}</td><td colspan="${dias.length}"></td></tr>`;
     for (const { cabecalho, grupo } of grupos) {
       t += `<tr class="group"><td class="name">${cabecalho} <span class="muted">(${grupo.length})</span></td><td colspan="${dias.length}"></td></tr>`;
       for (const c of grupo) {
-        t += `<tr><td class="name">${planilha ? nomePlanilha(c) : `<div class="n" title="${esc(c.nome)}">${esc(c.nome)}</div>${tagsColaborador(c)}`}</td>`;
+        t += `<tr><td class="name">${nomePlanilha(c)}</td>`;
         for (const d of dias) {
           const x = cel.get(`${c.id}|${d}`);
-          t += planilha
-            ? `<td class="cell ${clsDia(d)} ${classePlanilha(x)}" data-c="${c.id}" data-d="${d}" title="${esc(tituloCelula(x))}">${textoPlanilha(x)}</td>`
-            : `<td class="cell ${clsDia(d)}" data-c="${c.id}" data-d="${d}">${chipCelula(x)}</td>`;
+          t += `<td class="cell ${clsDia(d)} ${classePlanilha(x)}" data-c="${c.id}" data-d="${d}" title="${esc(tituloCelula(x))}">${textoPlanilha(x)}</td>`;
         }
         t += '</tr>';
       }
@@ -707,11 +667,9 @@ function renderGrade() {
   // Cada colaborador habilitado tem uma linha, com as horas de cada dia e o total do mês.
   const secoes = secoesSobreaviso();
   if (secoes.length) {
-    const cabSA = planilha
-      ? '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horas</span></div>'
-      : 'Colaborador';
+    const cabSA = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horas</span></div>';
     html += `<div class="tabela-titulo">Sobreaviso</div>
-      <table class="grid sa-tabela ${planilha ? 'planilha' : ''}"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
+      <table class="grid sa-tabela planilha"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
   }
   const ausencia = (id, d) => ['FERIAS', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
   for (const { torre: t, porPessoa, cobertos, habilitados, descobertos, totalTorre, totalDe } of secoes) {
@@ -726,17 +684,12 @@ function renderGrade() {
     for (const c of habilitados) {
       const total = totalDe(c.id);
       const totalTxt = `<strong class="sa-total" title="Total de horas de sobreaviso no mês">${fmtHoras(total)}</strong>`;
-      html += `<tr class="sa-row"><td class="name">${
-        planilha
-          ? nomePlanilha(c, { escala: totalTxt })
-          : `<div class="n" title="${esc(c.nome)}">${esc(c.nome)} ${totalTxt}</div>${tagsColaborador(c)}`
-      }</td>${dias
+      html += `<tr class="sa-row"><td class="name">${nomePlanilha(c, { escala: totalTxt })}</td>${dias
         .map((d) => {
           const s = porPessoa.get(`${c.id}|${d}`);
           const aus = ausencia(c.id, d);
-          const rotulo = s ? (s.horas != null ? fmtHoras(s.horas) : planilha ? 'SOBREAVISO' : 'SA') : '';
+          const conteudo = s ? (s.horas != null ? fmtHoras(s.horas) : 'SOBREAVISO') : '';
           const titulo = s ? `Sobreaviso ${t.codigo}${s.horas != null ? ` · ${fmtHoras(s.horas)}` : ''}` : aus ? 'Ausente (férias/atestado)' : '';
-          const conteudo = !s ? '' : planilha ? rotulo : `<span class="chip" style="--c:${esc(t.cor)}">${rotulo}</span>`;
           return `<td class="sa-cell ${clsDia(d)} ${s ? 'sa-on' : ''} ${aus ? 'sa-aus' : ''}" style="--c:${esc(
             t.cor
           )}" data-t="${t.id}" data-c="${c.id}" data-d="${d}" title="${esc(titulo)}">${conteudo}</td>`;
