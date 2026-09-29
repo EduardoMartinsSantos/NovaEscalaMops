@@ -355,7 +355,7 @@ function exportarExcel() {
   const cel = new Map(celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
   const colabs = colaboradoresVisiveis();
   const fimDeSemana = (d) => [0, 6].includes(diaSemana(d));
-  const INFO = 5; // Nome, Torre, Turno, Mesa, Escala
+  const INFO = 6; // Nome, Torre, Turno, Mesa, Horário, Escala
   const largura = INFO + dias.length;
   const linhas = [];
   const mesclar = [];
@@ -377,15 +377,13 @@ function exportarExcel() {
       { v: torre?.codigo || '' },
       { v: turno?.codigo || '' },
       { v: mesa?.codigo || '' },
+      { v: horarioDoTurno(turno) },
       escala || { v: (turno?.padrao || '').toUpperCase() },
     ];
   };
-  const celulaDia = (x, d) => {
+  const celulaDia = (x, d, c) => {
     if (!x) return vazioDoDia(d);
-    if (x.tipo === 'TURNO') {
-      const t = porId(state.turnos, x.turno_id);
-      return { v: t ? `${t.inicio} A ${t.fim}` : '', e: XL.trabalho };
-    }
+    if (x.tipo === 'TURNO') return { v: textoPlanilha(x, c), e: XL.trabalho };
     if (x.tipo === 'FOLGA') return { v: '', e: XL.folga };
     return { v: AUSENCIAS[x.tipo].nome.toUpperCase(), e: x.tipo === 'FERIAS' ? XL.ferias : XL.atestado };
   };
@@ -394,7 +392,7 @@ function exportarExcel() {
     linhas.push({
       altura: 30,
       celulas: [
-        ...['NOME', 'TORRE', 'TURNO', 'MESA', ultima].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
+        ...['NOME', 'TORRE', 'TURNO', 'MESA', 'HORÁRIO', ultima].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
         ...dias.map((d) => ({ v: `${SEMANA_ABREV[diaSemana(d)]}\n${d.slice(8)}/${d.slice(5, 7)}`, e: XL.cabecalho })),
       ],
     });
@@ -407,7 +405,7 @@ function exportarExcel() {
     for (const { titulo, grupo } of grupos) {
       linhaGrupo(`${titulo} (${grupo.length})`);
       for (const c of grupo) {
-        linhas.push({ celulas: [...infoColaborador(c), ...dias.map((d) => celulaDia(cel.get(`${c.id}|${d}`), d))] });
+        linhas.push({ celulas: [...infoColaborador(c), ...dias.map((d) => celulaDia(cel.get(`${c.id}|${d}`), d, c))] });
       }
     }
     mesclar.push({ linha: linhas.length, de: 0, ate: INFO - 1 });
@@ -463,7 +461,10 @@ function exportarExcel() {
 
   const blob = criarXlsx({
     aba: `Escala ${state.mes}`,
-    colunas: [{ largura: 38 }, { largura: 8 }, { largura: 8 }, { largura: 10 }, { largura: 9 }, ...dias.map(() => ({ largura: 13 }))],
+    colunas: [
+      { largura: 38 }, { largura: 8 }, { largura: 8 }, { largura: 10 }, { largura: 15 }, { largura: 9 },
+      ...dias.map(() => ({ largura: 8 })),
+    ],
     linhas,
     mesclar,
     congelar: { linhas: 1, colunas: INFO },
@@ -491,6 +492,7 @@ function nomePlanilha(c, { escala } = {}) {
     <span>${esc(torre?.codigo || '')}</span>
     <span>${esc(turno?.codigo || '')}</span>
     <span>${esc(mesa?.codigo || '')}</span>
+    <span>${esc(horarioDoTurno(turno))}</span>
     <span>${escala ?? esc((turno?.padrao || '').toUpperCase())}</span>
   </div>`;
 }
@@ -500,20 +502,23 @@ function classePlanilha(cel) {
   return { TURNO: 'p-trab', FOLGA: 'p-folga', FERIAS: 'p-ferias', ATESTADO: 'p-atestado' }[cel.tipo];
 }
 
-function textoPlanilha(cel) {
-  if (!cel) return '';
+const horarioDoTurno = (t) => (t ? `${t.inicio} às ${t.fim}` : '');
+
+// Texto do quadrado do dia: vazio no turno da própria pessoa (o horário fica na coluna Horário);
+// o código do turno quando o dia é num turno diferente do cadastrado; férias e atestado por extenso.
+function textoPlanilha(cel, c) {
+  if (!cel || cel.tipo === 'FOLGA') return '';
   if (cel.tipo === 'TURNO') {
-    const t = porId(state.turnos, cel.turno_id);
-    return t ? `${t.inicio} A ${t.fim}` : '';
+    return cel.turno_id !== c?.turno_id ? porId(state.turnos, cel.turno_id)?.codigo || '' : '';
   }
-  return cel.tipo === 'FOLGA' ? '' : AUSENCIAS[cel.tipo].nome.toUpperCase();
+  return AUSENCIAS[cel.tipo].nome.toUpperCase();
 }
 
 function tituloCelula(cel) {
   if (!cel) return '';
   if (cel.tipo === 'TURNO') {
     const t = porId(state.turnos, cel.turno_id);
-    return t ? `${t.codigo} · ${t.nome}` : '';
+    return t ? `${t.codigo} · ${horarioDoTurno(t)}` : '';
   }
   return AUSENCIAS[cel.tipo].nome;
 }
@@ -626,7 +631,7 @@ function renderGrade() {
     return [w === 0 || w === 6 ? 'we' : '', d === hoje ? 'hoje' : ''].join(' ');
   };
 
-  const cabNome = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Escala</span></div>';
+  const cabNome = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horário</span><span>Escala</span></div>';
   const cabDias = dias
     .map((d) => `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
@@ -640,7 +645,7 @@ function renderGrade() {
         t += `<tr><td class="name">${nomePlanilha(c)}</td>`;
         for (const d of dias) {
           const x = cel.get(`${c.id}|${d}`);
-          t += `<td class="cell ${clsDia(d)} ${classePlanilha(x)}" data-c="${c.id}" data-d="${d}" title="${esc(tituloCelula(x))}">${textoPlanilha(x)}</td>`;
+          t += `<td class="cell ${clsDia(d)} ${classePlanilha(x)}" data-c="${c.id}" data-d="${d}" title="${esc(tituloCelula(x))}">${textoPlanilha(x, c)}</td>`;
         }
         t += '</tr>';
       }
@@ -667,7 +672,7 @@ function renderGrade() {
   // Cada colaborador habilitado tem uma linha, com as horas de cada dia e o total do mês.
   const secoes = secoesSobreaviso();
   if (secoes.length) {
-    const cabSA = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horas</span></div>';
+    const cabSA = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horário</span><span>Horas</span></div>';
     html += `<div class="tabela-titulo">Sobreaviso</div>
       <table class="grid sa-tabela planilha"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
   }

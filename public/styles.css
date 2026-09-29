@@ -166,12 +166,12 @@ table.grid td.sa-cell:hover { outline: 2px solid var(--primary); outline-offset:
 
 
 /* Exibição "planilha" */
-table.grid.planilha th, table.grid.planilha td { height: 24px; min-width: 88px; font-size: 11px; }
+table.grid.planilha th, table.grid.planilha td { height: 24px; min-width: 52px; font-size: 11px; }
 table.grid.planilha thead th { background: #1f3b64; color: #fff; }
 table.grid.planilha thead th small { color: #c9d6ea; }
 table.grid.planilha thead th.name { background: #1f3b64; }
-table.grid.planilha .name { min-width: 520px; max-width: 520px; padding: 2px 10px; text-transform: uppercase; }
-table.grid.planilha .pl { display: grid; grid-template-columns: minmax(0, 1fr) 54px 56px 64px 56px; gap: 8px; align-items: center; }
+table.grid.planilha .name { min-width: 630px; max-width: 630px; padding: 2px 10px; text-transform: uppercase; }
+table.grid.planilha .pl { display: grid; grid-template-columns: minmax(0, 1fr) 54px 56px 64px 104px 56px; gap: 8px; align-items: center; }
 table.grid.planilha .pl span:not(.n) { text-align: center; font-size: 11px; }
 table.grid.planilha .pl .n { font-size: 11.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.grid.planilha tr.group td { background: #a3a3a3; color: #fff; text-transform: uppercase; }
