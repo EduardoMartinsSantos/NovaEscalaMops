@@ -358,3 +358,6 @@ table.list.editavel.travada td.ed select:disabled {
 }
 table.list.editavel.travada td.ed select.tag-sel:disabled { border-left: 4px solid var(--c) !important; }
 table.list.editavel.travada td.ed input[type=checkbox]:disabled { opacity: 1; cursor: default; }
+
+/* Espaço antes de cada seção de sobreaviso na escala */
+table.grid tr.sa-espaco td { height: 18px; padding: 0; border: 0; background: var(--bg); }

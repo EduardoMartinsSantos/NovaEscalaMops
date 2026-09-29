@@ -457,6 +457,7 @@ function exportarExcel() {
     const titulo =
       `Sobreaviso ${t.codigo} (${habilitados.length}${totalTorre ? ` · ${fmtHoras(totalTorre)}` : ''})` +
       (descobertos ? ` — ${descobertos} dia(s) sem ninguém` : '');
+    linhas.push({ altura: 12, celulas: [] }); // espaço entre as demais linhas e o sobreaviso
     linhaGrupo(titulo, dias.map((d) => ({ v: '', e: cobertos.has(d) ? XL.grupo : XL.semSobreaviso })));
     const corSA = { bold: true, size: 9, bg: misturarComBranco(t.cor, 0.3) };
     for (const c of habilitados) {
@@ -680,6 +681,7 @@ function renderGrade() {
   // e o total do mês.
   const ausencia = (id, d) => ['FERIAS', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
   for (const { torre: t, porPessoa, cobertos, habilitados, descobertos, totalTorre, totalDe } of secoesSobreaviso()) {
+    html += `<tr class="sa-espaco" aria-hidden="true"><td colspan="${dias.length + 1}"></td></tr>`;
     html += `<tr class="group sa-group"><td class="name">Sobreaviso ${tagSobreaviso(t)} <span class="muted">(${habilitados.length}${
       totalTorre ? ` · ${fmtHoras(totalTorre)}` : ''
     })</span>${descobertos ? ` <span class="sa-alerta">${descobertos} dia(s) sem ninguém</span>` : ''}</td>${dias
