@@ -375,8 +375,8 @@ function exportarExcel() {
     return [
       { v: c.nome.toUpperCase(), e: { bold: true, align: 'left' } },
       { v: torre?.codigo || '' },
-      { v: turno?.codigo || '', e: turno ? { bold: true, color: turno.cor, bg: misturarComBranco(turno.cor, 0.16) } : {} },
-      { v: mesa?.codigo || '', e: mesa ? { bold: true, color: mesa.cor, bg: misturarComBranco(mesa.cor, 0.16) } : {} },
+      { v: turno?.codigo || '' },
+      { v: mesa?.codigo || '' },
       escala || { v: (turno?.padrao || '').toUpperCase() },
     ];
   };
@@ -489,8 +489,8 @@ function nomePlanilha(c, { escala } = {}) {
   return `<div class="pl">
     <span class="n" title="${esc(c.nome)}">${esc(c.nome)}</span>
     <span>${esc(torre?.codigo || '')}</span>
-    <span>${tagTurno(turno)}</span>
-    <span>${tagMesa(mesa)}</span>
+    <span>${esc(turno?.codigo || '')}</span>
+    <span>${esc(mesa?.codigo || '')}</span>
     <span>${escala ?? esc((turno?.padrao || '').toUpperCase())}</span>
   </div>`;
 }

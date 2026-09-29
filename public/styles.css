@@ -293,7 +293,6 @@ table.list th.ordenavel { cursor: pointer; user-select: none; white-space: nowra
 table.list th.ordenavel:hover { color: var(--text); }
 table.list th.ordenavel.ativo { color: var(--primary); }
 .chip.trabalho { --c: #16a34a; }
-table.grid.planilha .pl .tag { font-size: 10.5px; padding: 0 6px; text-transform: none; }
 
 /* Seção de sobreaviso no rodapé da escala */
 table.grid tr.sa-group td.sa-vazio { background: color-mix(in srgb, var(--danger) 18%, transparent); }
