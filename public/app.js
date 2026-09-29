@@ -93,6 +93,7 @@ const state = {
   mes: mesAtual(),
   filtro: { torre: '', turno: '', busca: '' },
   agrupar: lerPreferencia('agrupar', 'torre'), // 'torre' | 'turno'
+  mostrarSobreaviso: lerPreferencia('mostrarSobreaviso', '1') === '1', // interruptor da tabela de sobreaviso na escala
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
   filtroColab: { torre: '', turno: '', mesa: '', sa: '', busca: '' },
@@ -270,6 +271,9 @@ function viewEscala() {
         <button data-g="torre" class="${state.agrupar === 'torre' ? 'active' : ''}">Torre</button>
         <button data-g="turno" class="${state.agrupar === 'turno' ? 'active' : ''}">Turno</button>
       </div>
+      <label class="interruptor" title="Mostrar ou ocultar a tabela de sobreaviso (vale também para o Excel)">
+        <input type="checkbox" id="mostrar-sa" ${state.mostrarSobreaviso ? 'checked' : ''}><span></span>Sobreaviso
+      </label>
       <span class="spacer"></span>
       <button id="btn-excel" class="primary">Exportar Excel</button>
       <a class="btn" id="btn-exportar" title="Exportar em CSV (texto simples)">CSV</a>
@@ -283,6 +287,15 @@ function viewEscala() {
   $('#f-torre').onchange = (e) => ((f.torre = e.target.value), renderGrade());
   $('#f-turno').onchange = (e) => ((f.turno = e.target.value), renderGrade());
   $('#f-busca').oninput = (e) => ((f.busca = e.target.value), renderGrade());
+  $('#mostrar-sa').onchange = (e) => {
+    state.mostrarSobreaviso = e.target.checked;
+    salvarPreferencia('mostrarSobreaviso', state.mostrarSobreaviso ? '1' : '0');
+    // Oculto, os pincéis de sobreaviso não têm onde agir.
+    if (!state.mostrarSobreaviso && ['SA', 'SERIE'].includes(state.pincel)) state.pincel = null;
+    limparPrevia();
+    renderLegenda();
+    renderGrade();
+  };
   $('#agrupar').onclick = (e) => {
     const b = e.target.closest('button[data-g]');
     if (!b || b.dataset.g === state.agrupar) return;
@@ -435,7 +448,7 @@ function exportarExcel() {
   }
 
   // Sobreaviso: bloco próprio abaixo da escala, com título e cabeçalho (como na tela).
-  const secoes = secoesSobreaviso();
+  const secoes = state.mostrarSobreaviso ? secoesSobreaviso() : [];
   if (secoes.length) {
     tituloBloco('SOBREAVISO');
     cabecalho('HORAS');
@@ -665,7 +678,7 @@ function renderGrade() {
 
   // Sobreaviso: tabela própria abaixo da escala, com o mesmo cabeçalho de dias (as colunas ficam alinhadas).
   // Cada colaborador habilitado tem uma linha, com as horas de cada dia e o total do mês.
-  const secoes = secoesSobreaviso();
+  const secoes = state.mostrarSobreaviso ? secoesSobreaviso() : [];
   if (secoes.length) {
     const cabSA = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horas</span></div>';
     html += `<div class="tabela-titulo">Sobreaviso</div>
@@ -721,10 +734,12 @@ function renderLegenda() {
     item('TRABALHO', '<span class="chip trabalho">T</span>', 'Trabalho') +
     item('FOLGA', `<span class="chip folga">${AUSENCIAS.FOLGA.sigla}</span>`, AUSENCIAS.FOLGA.nome) +
     item('', '<span class="chip">⌫</span>', 'Limpar') +
-    `<span class="legend-sep"></span>` +
-    item('SA', '<span class="chip sa-chip">☎</span>', 'Sobreaviso', `Série configurável: ${descreverSerie(state.serieSA)}`) +
-    `<button class="serie-resumo" id="cfg-serie-sa" title="Configurar a série do pincel Sobreaviso">${esc(resumoSA)} ⚙</button>` +
-    item('SERIE', '<span class="chip sa-chip">⇶</span>', 'Série fixa', fixas) +
+    (state.mostrarSobreaviso
+      ? `<span class="legend-sep"></span>` +
+        item('SA', '<span class="chip sa-chip">☎</span>', 'Sobreaviso', `Série configurável: ${descreverSerie(state.serieSA)}`) +
+        `<button class="serie-resumo" id="cfg-serie-sa" title="Configurar a série do pincel Sobreaviso">${esc(resumoSA)} ⚙</button>` +
+        item('SERIE', '<span class="chip sa-chip">⇶</span>', 'Série fixa', fixas)
+      : '') +
     (state.pincel !== null ? `<span class="label" style="margin-left:8px">Pincel ativo — Esc para sair</span>` : '');
   el.onclick = (e) => {
     if (e.target.closest('#cfg-serie-sa')) return dialogSerieSA();
