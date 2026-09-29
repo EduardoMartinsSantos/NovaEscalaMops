@@ -217,7 +217,7 @@ addEventListener('resize', fecharPopover);
 
 // ---------- roteamento ----------
 
-const VIEWS = { escala: viewEscala, colaboradores: viewColaboradores, torres: viewTorres, turnos: viewTurnos, mesas: viewMesas };
+const VIEWS = { escala: viewEscala, colaboradores: viewColaboradores, torres: viewTorres, turnos: viewTurnos, mesas: viewMesas, sobreaviso: viewSobreaviso };
 
 function rota() {
   if (!state.usuario) return telaLogin();
@@ -1563,7 +1563,7 @@ function viewTorres() {
     subtitulo: 'Times de atendimento. Marque as que possuem sobreaviso para habilitar a tag de sobreaviso.',
     recurso: 'torres',
     novo: 'Nova torre',
-    colunas: ['Ordem', 'Tag', 'Nome', 'Sobreaviso', 'Na escala', 'Colaboradores', 'Status'],
+    colunas: ['Ordem', 'Tag', 'Nome', 'Sobreaviso', 'Colaboradores', 'Status'],
     linha: (t) => [
       t.ordem,
       tagTorre(t),
@@ -1573,12 +1573,6 @@ function viewTorres() {
             t.padrao_sobreaviso ? `<div class="muted serie-txt">Série: ${esc(descreverSerie(t.padrao_sobreaviso))}</div>` : ''
           }`
         : '<span class="muted">Não</span>',
-      t.permite_sobreaviso
-        ? `<label class="interruptor" title="Mostrar ou ocultar o sobreaviso ${esc(t.codigo)} na escala e no Excel">
-            <input type="checkbox" data-sa-visivel="${t.id}" ${t.sobreaviso_visivel ? 'checked' : ''}><span></span>${
-              t.sobreaviso_visivel ? 'Visível' : 'Oculto'
-            }</label>`
-        : '<span class="muted">—</span>',
       contar(t),
       t.ativo ? 'Ativa' : 'Inativa',
     ],
@@ -1601,22 +1595,6 @@ function viewTorres() {
       ordem: valor(f, 'ordem'),
       ativo: marcado(f, 'ativo'),
     }),
-  });
-
-  // Interruptor "Na escala": mostra/oculta o sobreaviso da torre na escala e no Excel, gravando na hora.
-  $('#lista').addEventListener('change', async (e) => {
-    const inp = e.target.closest('[data-sa-visivel]');
-    if (!inp) return;
-    const t = porId(state.torres, Number(inp.dataset.saVisivel));
-    inp.disabled = true;
-    try {
-      await api('PUT', `/torres/${t.id}`, { ...t, sobreaviso_visivel: inp.checked });
-      await carregarBase();
-      toast(`Sobreaviso ${t.codigo} ${inp.checked ? 'visível' : 'oculto'} na escala.`);
-    } catch (err) {
-      toast(err.message, true);
-    }
-    viewTorres();
   });
 }
 
@@ -1686,6 +1664,51 @@ function viewMesas() {
       ativo: marcado(f, 'ativo'),
     }),
   });
+}
+
+// Cadastros → Sobreaviso: uma linha por torre com sobreaviso, com o interruptor que mostra/oculta
+// a seção dela na escala e no Excel (grava na hora; os lançamentos não são apagados).
+function viewSobreaviso() {
+  const torresSA = state.torres.filter((t) => t.permite_sobreaviso);
+  const habilitados = (t) => state.colaboradores.filter((c) => c.ativo && c.sobreaviso_torre_id === t.id).length;
+  main.innerHTML = `
+    <div class="page-head">
+      <div><h1>Sobreaviso</h1><p>Ligue ou desligue o sobreaviso de cada torre na escala. Oculto, ele some da escala e do Excel, sem apagar os lançamentos.</p></div>
+    </div>
+    <div class="card list-wrap" id="lista">${
+      torresSA.length
+        ? `<table class="list"><thead><tr><th>Torre</th><th>Nome</th><th>Série fixa</th><th>Habilitados</th><th>Na escala</th></tr></thead>
+          <tbody>${torresSA
+            .map(
+              (t) => `<tr class="${t.ativo ? '' : 'inativo'}">
+                <td>${tagSobreaviso(t)}</td>
+                <td>${esc(t.nome)}</td>
+                <td>${t.padrao_sobreaviso ? esc(descreverSerie(t.padrao_sobreaviso)) : '<span class="muted">—</span>'}</td>
+                <td>${habilitados(t)}</td>
+                <td><label class="interruptor" title="Mostrar ou ocultar o sobreaviso ${esc(t.codigo)} na escala">
+                  <input type="checkbox" data-sa-visivel="${t.id}" ${t.sobreaviso_visivel ? 'checked' : ''}><span></span>${
+                    t.sobreaviso_visivel ? 'Visível' : 'Oculto'
+                  }</label></td>
+              </tr>`
+            )
+            .join('')}</tbody></table>`
+        : '<div class="empty">Nenhuma torre com sobreaviso. Marque "Possui sobreaviso" em Cadastros → Torres.</div>'
+    }</div>`;
+
+  $('#lista').onchange = async (e) => {
+    const inp = e.target.closest('[data-sa-visivel]');
+    if (!inp) return;
+    const t = porId(state.torres, Number(inp.dataset.saVisivel));
+    inp.disabled = true;
+    try {
+      await api('PUT', `/torres/${t.id}`, { ...t, sobreaviso_visivel: inp.checked });
+      await carregarBase();
+      toast(`Sobreaviso ${t.codigo} ${inp.checked ? 'visível' : 'oculto'} na escala.`);
+    } catch (err) {
+      toast(err.message, true);
+    }
+    viewSobreaviso();
+  };
 }
 
 // ---------- login e sessão ----------
