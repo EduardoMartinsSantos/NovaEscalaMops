@@ -89,6 +89,7 @@ const state = {
   usuario: null, // colaborador logado ({ id, nome, email, senhaPadrao })
   torres: [],
   turnos: [],
+  mesas: [],
   colaboradores: [],
   mes: mesAtual(),
   filtro: { torre: '', turno: '', busca: '' },
@@ -96,7 +97,7 @@ const state = {
   exibicao: lerPreferencia('exibicao', 'compacta'), // 'compacta' | 'planilha'
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
-  filtroColab: { torre: '', turno: '', sa: '', busca: '' },
+  filtroColab: { torre: '', turno: '', mesa: '', sa: '', busca: '' },
   selecionados: new Set(), // ids marcados na lista de colaboradores
   editando: false, // tabela de colaboradores em modo edição
   rascunho: new Map(), // id → campos alterados ainda não salvos
@@ -109,9 +110,10 @@ const state = {
 const porId = (lista, id) => lista.find((x) => x.id === id);
 
 async function carregarBase() {
-  [state.torres, state.turnos, state.colaboradores] = await Promise.all([
+  [state.torres, state.turnos, state.mesas, state.colaboradores] = await Promise.all([
     api('GET', '/torres'),
     api('GET', '/turnos'),
+    api('GET', '/mesas'),
     api('GET', '/colaboradores'),
   ]);
 }
@@ -127,11 +129,12 @@ function tagTurno(t) {
   return `<span class="tag ${t.ativo ? '' : 'off'}" style="--c:${esc(t.cor)}" title="${esc(t.nome)} · ${t.inicio} às ${t.fim}">${esc(t.codigo)}</span>`;
 }
 const tagSobreaviso = (t) => (t ? tagTorre(t, 'sa') : '');
+const tagMesa = (m) => (m ? tagTorre(m, 'mesa') : '');
 
 function tagsColaborador(c) {
-  return `<div class="tags">${tagTorre(porId(state.torres, c.torre_id))}${tagTurno(porId(state.turnos, c.turno_id))}${tagSobreaviso(
-    porId(state.torres, c.sobreaviso_torre_id)
-  )}</div>`;
+  return `<div class="tags">${tagTorre(porId(state.torres, c.torre_id))}${tagTurno(porId(state.turnos, c.turno_id))}${tagMesa(
+    porId(state.mesas, c.mesa_id)
+  )}${tagSobreaviso(porId(state.torres, c.sobreaviso_torre_id))}</div>`;
 }
 
 // Opções de select: itens ativos + o valor atual mesmo que esteja inativo.
@@ -222,7 +225,7 @@ addEventListener('resize', fecharPopover);
 
 // ---------- roteamento ----------
 
-const VIEWS = { escala: viewEscala, colaboradores: viewColaboradores, torres: viewTorres, turnos: viewTurnos };
+const VIEWS = { escala: viewEscala, colaboradores: viewColaboradores, torres: viewTorres, turnos: viewTurnos, mesas: viewMesas };
 
 function rota() {
   if (!state.usuario) return telaLogin();
@@ -383,7 +386,7 @@ function exportarExcel() {
   const cel = new Map(celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
   const colabs = colaboradoresVisiveis();
   const fimDeSemana = (d) => [0, 6].includes(diaSemana(d));
-  const INFO = 4; // Nome, Torre, Turno, Escala
+  const INFO = 5; // Nome, Torre, Turno, Mesa, Escala
   const largura = INFO + dias.length;
   const linhas = [];
   const mesclar = [];
@@ -399,10 +402,12 @@ function exportarExcel() {
   const infoColaborador = (c, escala) => {
     const torre = porId(state.torres, c.torre_id);
     const turno = porId(state.turnos, c.turno_id);
+    const mesa = porId(state.mesas, c.mesa_id);
     return [
       { v: c.nome.toUpperCase(), e: { bold: true, align: 'left' } },
       { v: torre?.codigo || '' },
       { v: turno?.codigo || '', e: turno ? { bold: true, color: turno.cor, bg: misturarComBranco(turno.cor, 0.16) } : {} },
+      { v: mesa?.codigo || '', e: mesa ? { bold: true, color: mesa.cor, bg: misturarComBranco(mesa.cor, 0.16) } : {} },
       escala || { v: (turno?.padrao || '').toUpperCase() },
     ];
   };
@@ -420,7 +425,7 @@ function exportarExcel() {
   linhas.push({
     altura: 30,
     celulas: [
-      ...['NOME', 'TORRE', 'TURNO', 'ESCALA'].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
+      ...['NOME', 'TORRE', 'TURNO', 'MESA', 'ESCALA'].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
       ...dias.map((d) => ({ v: `${SEMANA_ABREV[diaSemana(d)]}\n${d.slice(8)}/${d.slice(5, 7)}`, e: XL.cabecalho })),
     ],
   });
@@ -470,7 +475,7 @@ function exportarExcel() {
 
   const blob = criarXlsx({
     aba: `Escala ${state.mes}`,
-    colunas: [{ largura: 38 }, { largura: 8 }, { largura: 8 }, { largura: 9 }, ...dias.map(() => ({ largura: 13 }))],
+    colunas: [{ largura: 38 }, { largura: 8 }, { largura: 8 }, { largura: 10 }, { largura: 9 }, ...dias.map(() => ({ largura: 13 }))],
     linhas,
     mesclar,
     congelar: { linhas: 1, colunas: INFO },
@@ -492,10 +497,12 @@ const SEMANA_ABREV = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 function nomePlanilha(c, { escala } = {}) {
   const torre = porId(state.torres, c.torre_id);
   const turno = porId(state.turnos, c.turno_id);
+  const mesa = porId(state.mesas, c.mesa_id);
   return `<div class="pl">
     <span class="n" title="${esc(c.nome)}">${esc(c.nome)}</span>
     <span>${esc(torre?.codigo || '')}</span>
     <span>${tagTurno(turno)}</span>
+    <span>${tagMesa(mesa)}</span>
     <span>${escala ?? esc((turno?.padrao || '').toUpperCase())}</span>
   </div>`;
 }
@@ -632,7 +639,7 @@ function renderGrade() {
 
   const planilha = state.exibicao === 'planilha';
   const cabNome = planilha
-    ? '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Escala</span></div>'
+    ? '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Escala</span></div>'
     : 'Colaborador';
   let html = `<table class="grid ${planilha ? 'planilha' : ''}"><thead><tr><th class="name">${cabNome}</th>${dias
     .map((d) =>
@@ -1061,6 +1068,11 @@ function viewColaboradores() {
       <select id="fu"><option value="">Turno: todos</option>${state.turnos
         .map((t) => `<option value="${t.id}" ${String(t.id) === f.turno ? 'selected' : ''}>${esc(t.codigo)}</option>`)
         .join('')}</select>
+      <select id="fm"><option value="">Mesa: todas</option><option value="nenhuma" ${
+        f.mesa === 'nenhuma' ? 'selected' : ''
+      }>Sem mesa</option>${state.mesas
+        .map((m) => `<option value="${m.id}" ${String(m.id) === f.mesa ? 'selected' : ''}>${esc(m.codigo)}</option>`)
+        .join('')}</select>
       <select id="fs"><option value="">Sobreaviso: todos</option><option value="nenhum" ${
         f.sa === 'nenhum' ? 'selected' : ''
       }>Sem sobreaviso</option>${torresSA
@@ -1075,6 +1087,7 @@ function viewColaboradores() {
   $('#ft').onchange = (e) => ((f.torre = e.target.value), renderColaboradores());
   $('#fu').onchange = (e) => ((f.turno = e.target.value), renderColaboradores());
   $('#fs').onchange = (e) => ((f.sa = e.target.value), renderColaboradores());
+  $('#fm').onchange = (e) => ((f.mesa = e.target.value), renderColaboradores());
   renderColaboradores();
 }
 
@@ -1086,7 +1099,8 @@ function colaboradoresFiltrados() {
       (!b || [c.nome, c.email, c.telefone].some((v) => v.toLowerCase().includes(b))) &&
       (!f.torre || String(c.torre_id) === f.torre) &&
       (!f.turno || String(c.turno_id) === f.turno) &&
-      (!f.sa || (f.sa === 'nenhum' ? !c.sobreaviso_torre_id : String(c.sobreaviso_torre_id) === f.sa))
+      (!f.sa || (f.sa === 'nenhum' ? !c.sobreaviso_torre_id : String(c.sobreaviso_torre_id) === f.sa)) &&
+      (!f.mesa || (f.mesa === 'nenhuma' ? !c.mesa_id : String(c.mesa_id) === f.mesa))
   );
   const { campo, dir } = state.ordemColab;
   if (!campo) return lista;
@@ -1118,6 +1132,7 @@ const CAMPOS_SELECT = {
   torre_id: () => state.torres,
   turno_id: () => state.turnos,
   sobreaviso_torre_id: () => state.torres,
+  mesa_id: () => state.mesas,
 };
 
 const normalizar = (v) => (v === null || v === undefined ? '' : typeof v === 'boolean' ? (v ? '1' : '0') : String(v).trim());
@@ -1213,6 +1228,7 @@ function linhaEdicao(c, torresSA) {
     ${celulaTexto(c, 'telefone', 'w-tel', 'tel')}
     ${celulaSelect(c, 'torre_id', state.torres, (t) => t.codigo)}
     ${celulaSelect(c, 'turno_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`)}
+    ${celulaSelect(c, 'mesa_id', state.mesas, (m) => m.codigo, '—')}
     ${celulaSelect(c, 'sobreaviso_torre_id', torresSA, (t) => t.codigo, '—')}
     <td class="ed center ${alterado(c, 'ativo') ? 'alterado' : ''}"><input type="checkbox" data-f="ativo" ${ativo ? 'checked' : ''}></td>
     <td></td>`;
@@ -1225,6 +1241,7 @@ function linhaLeitura(c) {
     <td>${esc(c.telefone) || '<span class="muted">—</span>'}</td>
     <td>${tagTorre(porId(state.torres, c.torre_id))}</td>
     <td>${tagTurno(porId(state.turnos, c.turno_id))}</td>
+    <td>${tagMesa(porId(state.mesas, c.mesa_id)) || '<span class="muted">—</span>'}</td>
     <td>${tagSobreaviso(porId(state.torres, c.sobreaviso_torre_id)) || '<span class="muted">—</span>'}</td>
     <td>${c.ativo ? 'Ativo' : '<span class="muted">Inativo</span>'}</td>
     <td class="actions"><button class="ghost danger icon" data-del="${c.id}" title="Excluir">✕</button></td>`;
@@ -1249,7 +1266,7 @@ function renderColaboradores() {
       <th class="sel"><input type="checkbox" id="sel-todos" title="Selecionar todos os exibidos" ${
         marcadosVisiveis === lista.length ? 'checked' : ''
       }></th>
-      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}<th>Sobreaviso</th><th>${
+      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}<th>Sobreaviso</th><th>${
         editando ? 'Ativo' : 'Status'
       }</th><th></th>
     </tr></thead><tbody>${lista
@@ -1395,17 +1412,18 @@ function formLote() {
         <label class="field"><span>Turno</span>${sel('turno_id', state.turnos, (t) => `${t.codigo} — ${t.inicio} às ${t.fim}`)}</label>
       </div>
       <div class="row">
+        <label class="field"><span>Mesa</span>${sel('mesa_id', state.mesas, (m) => `${m.codigo} — ${m.nome}`, 'Sem mesa')}</label>
         <label class="field"><span>Sobreaviso</span>${sel(
           'sobreaviso_torre_id',
           state.torres.filter((t) => t.permite_sobreaviso),
           (t) => `${t.codigo} — ${t.nome}`,
           'Nenhum'
         )}</label>
-        <label class="field"><span>Status</span><select name="ativo">${manter}<option value="1">Ativo</option><option value="0">Inativo</option></select></label>
-      </div>`,
+      </div>
+      <label class="field"><span>Status</span><select name="ativo">${manter}<option value="1">Ativo</option><option value="0">Inativo</option></select></label>`,
     async onSubmit(form) {
       const campos = {};
-      for (const k of ['torre_id', 'turno_id', 'sobreaviso_torre_id']) {
+      for (const k of ['torre_id', 'turno_id', 'mesa_id', 'sobreaviso_torre_id']) {
         if (valor(form, k) !== '__manter') campos[k] = valor(form, k);
       }
       if (valor(form, 'ativo') !== '__manter') campos.ativo = valor(form, 'ativo') === '1';
@@ -1452,12 +1470,20 @@ function formColaborador(c = null) {
           'Selecione…'
         )}</select></label>
       </div>
-      <label class="field"><span>Sobreaviso</span><select name="sobreaviso_torre_id">${opcoes(
-        torresSA,
-        c?.sobreaviso_torre_id,
-        (t) => `${t.codigo} — ${t.nome}`,
-        'Nenhum'
-      )}</select></label>
+      <div class="row">
+        <label class="field"><span>Mesa</span><select name="mesa_id">${opcoes(
+          state.mesas,
+          c?.mesa_id,
+          (m) => `${m.codigo} — ${m.nome}`,
+          'Sem mesa'
+        )}</select></label>
+        <label class="field"><span>Sobreaviso</span><select name="sobreaviso_torre_id">${opcoes(
+          torresSA,
+          c?.sobreaviso_torre_id,
+          (t) => `${t.codigo} — ${t.nome}`,
+          'Nenhum'
+        )}</select></label>
+      </div>
       <label class="check"><input type="checkbox" name="ativo" ${!c || c.ativo ? 'checked' : ''}> Ativo</label>`,
     async onSubmit(form) {
       const body = {
@@ -1467,6 +1493,7 @@ function formColaborador(c = null) {
         torre_id: valor(form, 'torre_id'),
         turno_id: valor(form, 'turno_id'),
         sobreaviso_torre_id: valor(form, 'sobreaviso_torre_id'),
+        mesa_id: valor(form, 'mesa_id'),
         ativo: marcado(form, 'ativo'),
       };
       await api(c ? 'PUT' : 'POST', c ? `/colaboradores/${c.id}` : '/colaboradores', body);
@@ -1633,6 +1660,31 @@ function viewTurnos() {
 }
 
 // ---------- início ----------
+
+function viewMesas() {
+  const contar = (m) => state.colaboradores.filter((c) => c.mesa_id === m.id).length;
+  telaCadastro({
+    titulo: 'Mesas',
+    subtitulo: 'Mesas de trabalho. Cada colaborador pode ter uma mesa, exibida como tag.',
+    recurso: 'mesas',
+    novo: 'Nova mesa',
+    colunas: ['Ordem', 'Tag', 'Nome', 'Colaboradores', 'Status'],
+    linha: (m) => [m.ordem, tagMesa(m), esc(m.nome), contar(m), m.ativo ? 'Ativa' : 'Inativa'],
+    emUso: (m) => contar(m) > 0,
+    corpo: (m) => `${camposComuns(m, '#0f766e')}
+      <label class="field"><span>Ordem de exibição</span><input type="number" name="ordem" min="0" step="1" value="${esc(
+        m?.ordem ?? state.mesas.length + 1
+      )}"></label>
+      <label class="check"><input type="checkbox" name="ativo" ${!m || m.ativo ? 'checked' : ''}> Ativa</label>`,
+    form: (f) => ({
+      codigo: valor(f, 'codigo'),
+      nome: valor(f, 'nome'),
+      cor: valor(f, 'cor'),
+      ordem: valor(f, 'ordem'),
+      ativo: marcado(f, 'ativo'),
+    }),
+  });
+}
 
 // ---------- login e sessão ----------
 

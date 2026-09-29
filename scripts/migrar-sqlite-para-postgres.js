@@ -31,7 +31,7 @@ async function main() {
   const colTurnos = colunas('turnos');
 
   await transacao(async () => {
-    await exec('TRUNCATE sobreaviso, escala, colaboradores, turnos, torres RESTART IDENTITY CASCADE');
+    await exec('TRUNCATE sobreaviso, escala, colaboradores, mesas, turnos, torres RESTART IDENTITY CASCADE');
 
     for (const t of torres) {
       await exec(
