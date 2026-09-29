@@ -31,10 +31,17 @@ As tabelas são criadas sozinhas na primeira requisição.
 
 Na Vercel, a `DATABASE_URL` da branch `dev` é uma variável de Preview restrita a essa branch, que substitui a de produção.
 
-Para atualizar o banco de testes com os dados de produção (apaga tudo no destino):
+Copiar os dados de um banco para outro (apaga tudo no destino) — ex.: produção → testes, ou testes → produção:
 
 ```bash
-ORIGEM_URL="<url de produção>" DESTINO_URL="<url de testes>" node scripts/copiar-banco.js
+ORIGEM_URL="<url de origem>" DESTINO_URL="<url de destino>" node scripts/copiar-banco.js
+```
+
+Backup antes de sobrescrever (salvo em `data/`, fora do GitHub) e restauração a partir dele:
+
+```bash
+BACKUP_URL="<url do banco>" node scripts/backup-banco.js [arquivo.json]
+ORIGEM_ARQUIVO="data/<arquivo>.json" DESTINO_URL="<url do banco>" node scripts/copiar-banco.js
 ```
 
 ## Publicar na Vercel
