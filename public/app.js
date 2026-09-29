@@ -1205,46 +1205,36 @@ async function salvarRascunho() {
   }
 }
 
-function celulaSelect(c, campo, lista, rotulo, vazio) {
+function celulaSelect(c, campo, lista, rotulo, vazio, travado = false) {
   const v = valorAtual(c, campo);
   const atual = v === '' || v === null || v === undefined ? null : Number(v);
   const item = porId(lista, atual);
-  return `<td class="ed ${alterado(c, campo) ? 'alterado' : ''}"><select data-f="${campo}" class="tag-sel" style="--c:${esc(
-    item?.cor || 'transparent'
-  )}">${opcoes(lista, atual, rotulo, vazio)}</select></td>`;
+  return `<td class="ed ${alterado(c, campo) ? 'alterado' : ''}"><select data-f="${campo}" class="tag-sel" ${
+    travado ? 'disabled' : ''
+  } style="--c:${esc(item?.cor || 'transparent')}">${opcoes(lista, atual, rotulo, vazio)}</select></td>`;
 }
 
-function celulaTexto(c, campo, classe, tipo) {
+function celulaTexto(c, campo, classe, tipo, travado = false) {
   return `<td class="ed ${alterado(c, campo) ? 'alterado' : ''}"><input data-f="${campo}" class="${classe}" type="${tipo}" maxlength="120" value="${esc(
     valorAtual(c, campo)
-  )}" placeholder="—"></td>`;
+  )}" placeholder="—" ${travado ? 'disabled' : ''}></td>`;
 }
 
-function linhaEdicao(c, torresSA) {
+// Mesma linha nos dois modos; fora do modo edição os campos ficam travados (disabled).
+function linhaColaborador(c, torresSA, travado) {
   const ativo = normalizar(valorAtual(c, 'ativo')) === '1';
   return `
-    ${celulaTexto(c, 'nome', 'w-nome', 'text')}
-    ${celulaTexto(c, 'email', 'w-email', 'email')}
-    ${celulaTexto(c, 'telefone', 'w-tel', 'tel')}
-    ${celulaSelect(c, 'torre_id', state.torres, (t) => t.codigo)}
-    ${celulaSelect(c, 'turno_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`)}
-    ${celulaSelect(c, 'mesa_id', state.mesas, (m) => m.codigo, '—')}
-    ${celulaSelect(c, 'sobreaviso_torre_id', torresSA, (t) => t.codigo, '—')}
-    <td class="ed center ${alterado(c, 'ativo') ? 'alterado' : ''}"><input type="checkbox" data-f="ativo" ${ativo ? 'checked' : ''}></td>
-    <td></td>`;
-}
-
-function linhaLeitura(c) {
-  return `
-    <td><strong>${esc(c.nome)}</strong></td>
-    <td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '<span class="muted">—</span>'}</td>
-    <td>${esc(c.telefone) || '<span class="muted">—</span>'}</td>
-    <td>${tagTorre(porId(state.torres, c.torre_id))}</td>
-    <td>${tagTurno(porId(state.turnos, c.turno_id))}</td>
-    <td>${tagMesa(porId(state.mesas, c.mesa_id)) || '<span class="muted">—</span>'}</td>
-    <td>${tagSobreaviso(porId(state.torres, c.sobreaviso_torre_id)) || '<span class="muted">—</span>'}</td>
-    <td>${c.ativo ? 'Ativo' : '<span class="muted">Inativo</span>'}</td>
-    <td class="actions"><button class="ghost danger icon" data-del="${c.id}" title="Excluir">✕</button></td>`;
+    ${celulaTexto(c, 'nome', 'w-nome', 'text', travado)}
+    ${celulaTexto(c, 'email', 'w-email', 'email', travado)}
+    ${celulaTexto(c, 'telefone', 'w-tel', 'tel', travado)}
+    ${celulaSelect(c, 'torre_id', state.torres, (t) => t.codigo, undefined, travado)}
+    ${celulaSelect(c, 'turno_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`, undefined, travado)}
+    ${celulaSelect(c, 'mesa_id', state.mesas, (m) => m.codigo, '—', travado)}
+    ${celulaSelect(c, 'sobreaviso_torre_id', torresSA, (t) => t.codigo, '—', travado)}
+    <td class="ed center ${alterado(c, 'ativo') ? 'alterado' : ''}"><input type="checkbox" data-f="ativo" ${ativo ? 'checked' : ''} ${
+      travado ? 'disabled' : ''
+    }></td>
+    <td class="actions">${travado ? `<button class="ghost danger icon" data-del="${c.id}" title="Excluir">✕</button>` : ''}</td>`;
 }
 
 function renderColaboradores() {
@@ -1262,19 +1252,17 @@ function renderColaboradores() {
   const editando = state.editando;
   const torresSA = state.torres.filter((t) => t.permite_sobreaviso);
   const marcadosVisiveis = lista.filter((c) => sel.has(c.id)).length;
-  el.innerHTML = `<table class="list colab ${editando ? 'editavel' : ''}"><thead><tr>
+  el.innerHTML = `<table class="list colab editavel ${editando ? '' : 'travada'}"><thead><tr>
       <th class="sel"><input type="checkbox" id="sel-todos" title="Selecionar todos os exibidos" ${
         marcadosVisiveis === lista.length ? 'checked' : ''
       }></th>
-      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}<th>Sobreaviso</th><th>${
-        editando ? 'Ativo' : 'Status'
-      }</th><th></th>
+      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}<th>Sobreaviso</th><th>Ativo</th><th></th>
     </tr></thead><tbody>${lista
       .map((c) => {
         const inativo = normalizar(valorAtual(c, 'ativo')) !== '1';
         return `<tr class="${inativo ? 'inativo' : ''} ${sel.has(c.id) ? 'selecionado' : ''}" data-id="${c.id}">
           <td class="sel"><input type="checkbox" data-sel="${c.id}" ${sel.has(c.id) ? 'checked' : ''}></td>
-          ${editando ? linhaEdicao(c, torresSA) : linhaLeitura(c)}</tr>`;
+          ${linhaColaborador(c, torresSA, !editando)}</tr>`;
       })
       .join('')}</tbody></table>`;
 

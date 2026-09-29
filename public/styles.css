@@ -349,3 +349,12 @@ body.deslogado .layout { grid-template-columns: 1fr; }
   .usuario-nome { display: none; }
 }
 .tag.mesa::before { content: "▣"; font-size: 10px; }
+
+/* Tabela de colaboradores fora do modo edição: mesmo visual, campos travados */
+table.list.editavel.travada td.ed input:not([type=checkbox]):disabled,
+table.list.editavel.travada td.ed select:disabled {
+  color: var(--text); -webkit-text-fill-color: var(--text); opacity: 1; cursor: default;
+  appearance: none; -webkit-appearance: none; background: transparent; border-color: transparent;
+}
+table.list.editavel.travada td.ed select.tag-sel:disabled { border-left: 4px solid var(--c) !important; }
+table.list.editavel.travada td.ed input[type=checkbox]:disabled { opacity: 1; cursor: default; }
