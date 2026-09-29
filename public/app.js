@@ -93,7 +93,6 @@ const state = {
   mes: mesAtual(),
   filtro: { torre: '', turno: '', busca: '' },
   agrupar: lerPreferencia('agrupar', 'torre'), // 'torre' | 'turno'
-  mostrarSobreaviso: lerPreferencia('mostrarSobreaviso', '1') === '1', // interruptor da tabela de sobreaviso na escala
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
   filtroColab: { torre: '', turno: '', mesa: '', sa: '', busca: '' },
@@ -271,9 +270,6 @@ function viewEscala() {
         <button data-g="torre" class="${state.agrupar === 'torre' ? 'active' : ''}">Torre</button>
         <button data-g="turno" class="${state.agrupar === 'turno' ? 'active' : ''}">Turno</button>
       </div>
-      <label class="interruptor" title="Mostrar ou ocultar a tabela de sobreaviso (vale também para o Excel)">
-        <input type="checkbox" id="mostrar-sa" ${state.mostrarSobreaviso ? 'checked' : ''}><span></span>Sobreaviso
-      </label>
       <span class="spacer"></span>
       <button id="btn-excel" class="primary">Exportar Excel</button>
       <a class="btn" id="btn-exportar" title="Exportar em CSV (texto simples)">CSV</a>
@@ -287,15 +283,6 @@ function viewEscala() {
   $('#f-torre').onchange = (e) => ((f.torre = e.target.value), renderGrade());
   $('#f-turno').onchange = (e) => ((f.turno = e.target.value), renderGrade());
   $('#f-busca').oninput = (e) => ((f.busca = e.target.value), renderGrade());
-  $('#mostrar-sa').onchange = (e) => {
-    state.mostrarSobreaviso = e.target.checked;
-    salvarPreferencia('mostrarSobreaviso', state.mostrarSobreaviso ? '1' : '0');
-    // Oculto, os pincéis de sobreaviso não têm onde agir.
-    if (!state.mostrarSobreaviso && ['SA', 'SERIE'].includes(state.pincel)) state.pincel = null;
-    limparPrevia();
-    renderLegenda();
-    renderGrade();
-  };
   $('#agrupar').onclick = (e) => {
     const b = e.target.closest('button[data-g]');
     if (!b || b.dataset.g === state.agrupar) return;
@@ -448,7 +435,7 @@ function exportarExcel() {
   }
 
   // Sobreaviso: bloco próprio abaixo da escala, com título e cabeçalho (como na tela).
-  const secoes = state.mostrarSobreaviso ? secoesSobreaviso() : [];
+  const secoes = secoesSobreaviso();
   if (secoes.length) {
     tituloBloco('SOBREAVISO');
     cabecalho('HORAS');
@@ -608,7 +595,7 @@ function gruposDaGrade(colabs) {
 function secoesSobreaviso() {
   const { dias, sobreaviso } = state.escala;
   return state.torres
-    .filter((t) => t.permite_sobreaviso && t.ativo)
+    .filter((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
     .map((t) => {
       const lanc = sobreaviso.filter((s) => s.torre_id === t.id);
       const cobertos = new Set(lanc.map((s) => s.data));
@@ -678,7 +665,7 @@ function renderGrade() {
 
   // Sobreaviso: tabela própria abaixo da escala, com o mesmo cabeçalho de dias (as colunas ficam alinhadas).
   // Cada colaborador habilitado tem uma linha, com as horas de cada dia e o total do mês.
-  const secoes = state.mostrarSobreaviso ? secoesSobreaviso() : [];
+  const secoes = secoesSobreaviso();
   if (secoes.length) {
     const cabSA = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horas</span></div>';
     html += `<div class="tabela-titulo">Sobreaviso</div>
@@ -734,7 +721,7 @@ function renderLegenda() {
     item('TRABALHO', '<span class="chip trabalho">T</span>', 'Trabalho') +
     item('FOLGA', `<span class="chip folga">${AUSENCIAS.FOLGA.sigla}</span>`, AUSENCIAS.FOLGA.nome) +
     item('', '<span class="chip">⌫</span>', 'Limpar') +
-    (state.mostrarSobreaviso
+    (state.torres.some((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
       ? `<span class="legend-sep"></span>` +
         item('SA', '<span class="chip sa-chip">☎</span>', 'Sobreaviso', `Série configurável: ${descreverSerie(state.serieSA)}`) +
         `<button class="serie-resumo" id="cfg-serie-sa" title="Configurar a série do pincel Sobreaviso">${esc(resumoSA)} ⚙</button>` +
@@ -1576,7 +1563,7 @@ function viewTorres() {
     subtitulo: 'Times de atendimento. Marque as que possuem sobreaviso para habilitar a tag de sobreaviso.',
     recurso: 'torres',
     novo: 'Nova torre',
-    colunas: ['Ordem', 'Tag', 'Nome', 'Sobreaviso', 'Colaboradores', 'Status'],
+    colunas: ['Ordem', 'Tag', 'Nome', 'Sobreaviso', 'Na escala', 'Colaboradores', 'Status'],
     linha: (t) => [
       t.ordem,
       tagTorre(t),
@@ -1586,6 +1573,12 @@ function viewTorres() {
             t.padrao_sobreaviso ? `<div class="muted serie-txt">Série: ${esc(descreverSerie(t.padrao_sobreaviso))}</div>` : ''
           }`
         : '<span class="muted">Não</span>',
+      t.permite_sobreaviso
+        ? `<label class="interruptor" title="Mostrar ou ocultar o sobreaviso ${esc(t.codigo)} na escala e no Excel">
+            <input type="checkbox" data-sa-visivel="${t.id}" ${t.sobreaviso_visivel ? 'checked' : ''}><span></span>${
+              t.sobreaviso_visivel ? 'Visível' : 'Oculto'
+            }</label>`
+        : '<span class="muted">—</span>',
       contar(t),
       t.ativo ? 'Ativa' : 'Inativa',
     ],
@@ -1594,6 +1587,7 @@ function viewTorres() {
     corpo: (t) => `${camposComuns(t, '#2563eb')}
       <label class="field"><span>Ordem de exibição</span><input type="number" name="ordem" min="0" step="1" value="${esc(t?.ordem ?? state.torres.length + 1)}"></label>
       <label class="check"><input type="checkbox" name="permite_sobreaviso" ${t?.permite_sobreaviso ? 'checked' : ''}> Possui sobreaviso</label>
+      <label class="check"><input type="checkbox" name="sobreaviso_visivel" ${!t || t.sobreaviso_visivel ? 'checked' : ''}> Mostrar o sobreaviso na escala</label>
       ${editorSerieHtml(t?.padrao_sobreaviso)}
       <label class="check"><input type="checkbox" name="ativo" ${!t || t.ativo ? 'checked' : ''}> Ativa</label>
       ${t?.permite_sobreaviso ? '<p class="hint">Desmarcar o sobreaviso remove a tag dos colaboradores e apaga os plantões desta torre.</p>' : ''}`,
@@ -1602,10 +1596,27 @@ function viewTorres() {
       nome: valor(f, 'nome'),
       cor: valor(f, 'cor'),
       permite_sobreaviso: marcado(f, 'permite_sobreaviso'),
+      sobreaviso_visivel: marcado(f, 'sobreaviso_visivel'),
       padrao_sobreaviso: valor(f, 'padrao_sobreaviso'),
       ordem: valor(f, 'ordem'),
       ativo: marcado(f, 'ativo'),
     }),
+  });
+
+  // Interruptor "Na escala": mostra/oculta o sobreaviso da torre na escala e no Excel, gravando na hora.
+  $('#lista').addEventListener('change', async (e) => {
+    const inp = e.target.closest('[data-sa-visivel]');
+    if (!inp) return;
+    const t = porId(state.torres, Number(inp.dataset.saVisivel));
+    inp.disabled = true;
+    try {
+      await api('PUT', `/torres/${t.id}`, { ...t, sobreaviso_visivel: inp.checked });
+      await carregarBase();
+      toast(`Sobreaviso ${t.codigo} ${inp.checked ? 'visível' : 'oculto'} na escala.`);
+    } catch (err) {
+      toast(err.message, true);
+    }
+    viewTorres();
   });
 }
 

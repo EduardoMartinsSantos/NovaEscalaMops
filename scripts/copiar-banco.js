@@ -23,7 +23,7 @@ const origem = ORIGEM_ARQUIVO ? null : new Pool({ connectionString: ORIGEM_URL, 
 
 // Ordem respeita as chaves estrangeiras.
 const TABELAS = {
-  torres: ['id', 'codigo', 'nome', 'cor', 'permite_sobreaviso', 'ordem', 'padrao_sobreaviso', 'ativo'],
+  torres: ['id', 'codigo', 'nome', 'cor', 'permite_sobreaviso', 'sobreaviso_visivel', 'ordem', 'padrao_sobreaviso', 'ativo'],
   turnos: ['id', 'codigo', 'nome', 'inicio', 'fim', 'cor', 'padrao', 'grupo', 'ativo'],
   mesas: ['id', 'codigo', 'nome', 'cor', 'ordem', 'ativo'],
   colaboradores: [
