@@ -13,7 +13,7 @@ definida em `SENHA_PADRAO`; depois pode trocar em **Trocar senha**, no menu.
 Requer Node.js 22+ e um Postgres (o mesmo Neon da Vercel ou outro).
 
 ```bash
-cp .env.example .env   # preencha DATABASE_URL, SESSION_SECRET e SENHA_PADRAO
+vercel env pull .env.local   # ou: cp .env.example .env e preencha à mão
 npm install
 npm start              # http://localhost:3000
 npm run dev            # reinicia ao salvar
