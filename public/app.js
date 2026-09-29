@@ -14,6 +14,10 @@ async function api(method, url, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const d = await r.json().catch(() => ({}));
+  if (r.status === 401 && url !== '/login') {
+    telaLogin();
+    throw new Error(d.erro || 'Sessão expirada.');
+  }
   if (!r.ok) throw new Error(d.erro || 'Falha na requisição.');
   return d;
 }
@@ -82,6 +86,7 @@ function salvarPreferencia(chave, v) {
 }
 
 const state = {
+  usuario: null, // colaborador logado ({ id, nome, email, senhaPadrao })
   torres: [],
   turnos: [],
   colaboradores: [],
@@ -220,6 +225,7 @@ addEventListener('resize', fecharPopover);
 const VIEWS = { escala: viewEscala, colaboradores: viewColaboradores, torres: viewTorres, turnos: viewTurnos };
 
 function rota() {
+  if (!state.usuario) return telaLogin();
   if (state.editando && location.hash !== '#colaboradores') {
     if (state.rascunho.size && !confirm('Descartar as alterações não salvas dos colaboradores?')) {
       history.replaceState(null, '', '#colaboradores');
@@ -1628,8 +1634,88 @@ function viewTurnos() {
 
 // ---------- início ----------
 
-carregarBase()
-  .then(rota)
+// ---------- login e sessão ----------
+
+function telaLogin() {
+  state.usuario = null;
+  document.body.classList.add('deslogado');
+  $('#usuario').hidden = true;
+  main.innerHTML = `
+    <div class="login">
+      <form class="card login-card" id="form-login">
+        <div class="brand"><span class="brand-logo">▦</span><span>Escala</span></div>
+        <h1>Entrar</h1>
+        <p class="muted">Use o seu e-mail cadastrado na escala.</p>
+        <label class="field"><span>E-mail</span><input name="email" type="email" autocomplete="username" required></label>
+        <label class="field"><span>Senha</span><input name="senha" type="password" autocomplete="current-password" required></label>
+        <p class="form-error"></p>
+        <button class="primary" type="submit">Entrar</button>
+      </form>
+    </div>`;
+  const form = $('#form-login');
+  form.elements.email.focus();
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    try {
+      const sessao = await api('POST', '/login', { email: valor(form, 'email'), senha: valor(form, 'senha') });
+      await iniciarApp(sessao);
+    } catch (err) {
+      $('.form-error', form).textContent = err.message;
+      btn.disabled = false;
+    }
+  };
+}
+
+function renderUsuario() {
+  const el = $('#usuario');
+  const u = state.usuario;
+  el.hidden = !u;
+  if (!u) return;
+  el.innerHTML = `
+    <div class="usuario-nome" title="${esc(u.email)}">${esc(u.nome)}</div>
+    <button class="ghost" id="btn-senha">Trocar senha</button>
+    <button class="ghost" id="btn-sair">Sair</button>`;
+  $('#btn-senha').onclick = dialogTrocarSenha;
+  $('#btn-sair').onclick = async () => {
+    await api('POST', '/logout').catch(() => {});
+    telaLogin();
+  };
+}
+
+function dialogTrocarSenha() {
+  abrirDialog({
+    titulo: 'Trocar senha',
+    confirmar: 'Salvar senha',
+    corpo: `
+      <label class="field"><span>Senha atual</span><input name="atual" type="password" autocomplete="current-password" required></label>
+      <label class="field"><span>Nova senha (mínimo 8 caracteres)</span><input name="nova" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label class="field"><span>Repita a nova senha</span><input name="repetir" type="password" autocomplete="new-password" required></label>`,
+    async onSubmit(form) {
+      if (valor(form, 'nova') !== valor(form, 'repetir')) throw new Error('As novas senhas não conferem.');
+      await api('POST', '/senha', { atual: valor(form, 'atual'), nova: valor(form, 'nova') });
+      state.usuario.senhaPadrao = false;
+      toast('Senha alterada.');
+    },
+  });
+}
+
+async function iniciarApp(sessao) {
+  state.usuario = sessao;
+  document.body.classList.remove('deslogado');
+  renderUsuario();
+  await carregarBase();
+  rota();
+  if (sessao.senhaPadrao) toast('Você está usando a senha padrão. Troque em "Trocar senha", no menu.');
+}
+
+fetch('/api/sessao')
+  .then(async (r) => {
+    if (r.status === 401) return telaLogin();
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || `HTTP ${r.status}`);
+    await iniciarApp(await r.json());
+  })
   .catch((e) => {
     main.innerHTML = `<div class="empty">Não foi possível conectar ao servidor: ${esc(e.message)}</div>`;
   });

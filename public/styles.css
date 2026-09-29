@@ -331,3 +331,20 @@ table.grid td.sa-cell.previa-folga::after {
 .serie-dia input:placeholder-shown { background: var(--surface-2); }
 .serie-dia input.invalido { border-color: var(--danger); color: var(--danger); }
 .legend .serie-resumo { padding: 3px 8px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Login e usuário logado */
+.sidebar { display: flex; flex-direction: column; }
+.usuario { margin-top: auto; padding: 12px 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; }
+.usuario-nome { font-weight: 600; font-size: 13px; padding: 0 8px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usuario button { justify-content: flex-start; font-size: 13px; }
+body.deslogado .sidebar { display: none; }
+body.deslogado .layout { grid-template-columns: 1fr; }
+.login { min-height: calc(100vh - 48px); display: grid; place-items: center; }
+.login-card { width: min(380px, 100%); padding: 28px; display: grid; gap: 14px; }
+.login-card h1 { margin: 4px 0 0; font-size: 22px; }
+.login-card p { margin: 0; }
+.login-card .brand { padding: 0; }
+@media (max-width: 760px) {
+  .usuario { margin: 0 0 0 auto; padding: 0; border: 0; display: flex; align-items: center; }
+  .usuario-nome { display: none; }
+}

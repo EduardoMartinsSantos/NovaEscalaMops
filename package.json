@@ -4,9 +4,16 @@
   "private": true,
   "description": "Escala de trabalho modular com tags de Torre, Turno e Sobreaviso",
   "main": "server.js",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --env-file-if-exists=.env --watch server.js",
+    "migrar": "node --env-file-if-exists=.env scripts/migrar-sqlite-para-postgres.js",
+    "importar-notion": "node --env-file-if-exists=.env scripts/importar-notion.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
   }
 }
