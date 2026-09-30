@@ -72,7 +72,8 @@ npm run migrar -- --substituir  # apaga o que houver no Postgres e copia de novo
 |---|---|
 | `torres` | codigo, nome, cor, permite_sobreaviso, ordem, padrao_sobreaviso, ativo |
 | `turnos` | codigo, nome, inicio, fim, cor, padrao (`5x2`, `6x1`, `12x36`, `livre`), ativo |
-| `colaboradores` | nome, email (login), telefone, **torre_id**, **turno_id**, **sobreaviso_torre_id**, ativo, senha_hash |
+| `mesas`, `contratos` | codigo, nome, cor, ordem, ativo |
+| `colaboradores` | nome, email (login), telefone, **torre_id**, **turno_id**, **mesa_id**, **contrato_id**, **sobreaviso_torre_id**, ativo, admin, senha_hash |
 | `escala` | colaborador_id, data, tipo (`TURNO`, `FOLGA`, `FERIAS`, `ATESTADO`), turno_id |
 | `sobreaviso` | torre_id, data, colaborador_id, horas |
 

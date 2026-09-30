@@ -89,13 +89,14 @@ const state = {
   torres: [],
   turnos: [],
   mesas: [],
+  contratos: [],
   colaboradores: [],
   mes: mesAtual(),
   filtro: { torre: '', turno: '', busca: '' },
   agrupar: lerPreferencia('agrupar', 'torre'), // 'torre' | 'turno'
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
-  filtroColab: { torre: '', turno: '', mesa: '', sa: '', busca: '' },
+  filtroColab: { torre: '', turno: '', mesa: '', contrato: '', sa: '', busca: '' },
   selecionados: new Set(), // ids marcados na lista de colaboradores
   editando: false, // tabela de colaboradores em modo edição
   rascunho: new Map(), // id → campos alterados ainda não salvos
@@ -108,10 +109,11 @@ const state = {
 const porId = (lista, id) => lista.find((x) => x.id === id);
 
 async function carregarBase() {
-  [state.torres, state.turnos, state.mesas, state.colaboradores] = await Promise.all([
+  [state.torres, state.turnos, state.mesas, state.contratos, state.colaboradores] = await Promise.all([
     api('GET', '/torres'),
     api('GET', '/turnos'),
     api('GET', '/mesas'),
+    api('GET', '/contratos'),
     api('GET', '/colaboradores'),
   ]);
 }
@@ -128,6 +130,7 @@ function tagTurno(t) {
 }
 const tagSobreaviso = (t) => (t ? tagTorre(t, 'sa') : '');
 const tagMesa = (m) => (m ? tagTorre(m, 'mesa') : '');
+const tagContrato = (x) => (x ? tagTorre(x, 'contrato') : '');
 
 // Opções de select: itens ativos + o valor atual mesmo que esteja inativo.
 function opcoes(lista, atual, rotulo, vazio) {
@@ -217,7 +220,7 @@ addEventListener('resize', fecharPopover);
 
 // ---------- roteamento ----------
 
-const VIEWS = { escala: viewEscala, colaboradores: viewColaboradores, torres: viewTorres, turnos: viewTurnos, mesas: viewMesas, sobreaviso: viewSobreaviso };
+const VIEWS = { escala: viewEscala, colaboradores: viewColaboradores, torres: viewTorres, turnos: viewTurnos, mesas: viewMesas, contratos: viewContratos, sobreaviso: viewSobreaviso };
 
 function rota() {
   if (!state.usuario) return telaLogin();
@@ -1070,6 +1073,11 @@ function viewColaboradores() {
       }>Sem mesa</option>${state.mesas
         .map((m) => `<option value="${m.id}" ${String(m.id) === f.mesa ? 'selected' : ''}>${esc(m.codigo)}</option>`)
         .join('')}</select>
+      <select id="fc"><option value="">Contrato: todos</option><option value="nenhum" ${
+        f.contrato === 'nenhum' ? 'selected' : ''
+      }>Sem contrato</option>${state.contratos
+        .map((x) => `<option value="${x.id}" ${String(x.id) === f.contrato ? 'selected' : ''}>${esc(x.codigo)}</option>`)
+        .join('')}</select>
       <select id="fs"><option value="">Sobreaviso: todos</option><option value="nenhum" ${
         f.sa === 'nenhum' ? 'selected' : ''
       }>Sem sobreaviso</option>${torresSA
@@ -1085,6 +1093,7 @@ function viewColaboradores() {
   $('#fu').onchange = (e) => ((f.turno = e.target.value), renderColaboradores());
   $('#fs').onchange = (e) => ((f.sa = e.target.value), renderColaboradores());
   $('#fm').onchange = (e) => ((f.mesa = e.target.value), renderColaboradores());
+  $('#fc').onchange = (e) => ((f.contrato = e.target.value), renderColaboradores());
   renderColaboradores();
 }
 
@@ -1097,7 +1106,8 @@ function colaboradoresFiltrados() {
       (!f.torre || String(c.torre_id) === f.torre) &&
       (!f.turno || String(c.turno_id) === f.turno) &&
       (!f.sa || (f.sa === 'nenhum' ? !c.sobreaviso_torre_id : String(c.sobreaviso_torre_id) === f.sa)) &&
-      (!f.mesa || (f.mesa === 'nenhuma' ? !c.mesa_id : String(c.mesa_id) === f.mesa))
+      (!f.mesa || (f.mesa === 'nenhuma' ? !c.mesa_id : String(c.mesa_id) === f.mesa)) &&
+      (!f.contrato || (f.contrato === 'nenhum' ? !c.contrato_id : String(c.contrato_id) === f.contrato))
   );
   const { campo, dir } = state.ordemColab;
   if (!campo) return lista;
@@ -1130,6 +1140,7 @@ const CAMPOS_SELECT = {
   turno_id: () => state.turnos,
   sobreaviso_torre_id: () => state.torres,
   mesa_id: () => state.mesas,
+  contrato_id: () => state.contratos,
 };
 
 const normalizar = (v) => (v === null || v === undefined ? '' : typeof v === 'boolean' ? (v ? '1' : '0') : String(v).trim());
@@ -1238,6 +1249,7 @@ function linhaColaborador(c, torresSA, travado) {
     ${celulaSelect(c, 'torre_id', state.torres, (t) => t.codigo, undefined, travado)}
     ${celulaSelect(c, 'turno_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`, undefined, travado)}
     ${celulaSelect(c, 'mesa_id', state.mesas, (m) => m.codigo, '—', travado)}
+    ${celulaSelect(c, 'contrato_id', state.contratos, (x) => x.codigo, '—', travado)}
     ${celulaSelect(c, 'sobreaviso_torre_id', torresSA, (t) => t.codigo, '—', travado)}
     <td class="ed center ${alterado(c, 'ativo') ? 'alterado' : ''}"><input type="checkbox" data-f="ativo" ${ativo ? 'checked' : ''} ${
       travado ? 'disabled' : ''
@@ -1265,7 +1277,7 @@ function renderColaboradores() {
       <th class="sel"><input type="checkbox" id="sel-todos" title="Selecionar todos os exibidos" ${
         marcadosVisiveis === lista.length ? 'checked' : ''
       }></th>
-      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}<th>Sobreaviso</th><th>Ativo</th>${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
+      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}${thOrdenavel('contrato_id', 'Contrato')}<th>Sobreaviso</th><th>Ativo</th>${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
     </tr></thead><tbody>${lista
       .map((c) => {
         const inativo = normalizar(valorAtual(c, 'ativo')) !== '1';
@@ -1438,6 +1450,9 @@ function formLote() {
       </div>
       <div class="row">
         <label class="field"><span>Mesa</span>${sel('mesa_id', state.mesas, (m) => `${m.codigo} — ${m.nome}`, 'Sem mesa')}</label>
+        <label class="field"><span>Contrato</span>${sel('contrato_id', state.contratos, (x) => `${x.codigo} — ${x.nome}`, 'Sem contrato')}</label>
+      </div>
+      <div class="row">
         <label class="field"><span>Sobreaviso</span>${sel(
           'sobreaviso_torre_id',
           state.torres.filter((t) => t.permite_sobreaviso),
@@ -1448,7 +1463,7 @@ function formLote() {
       <label class="field"><span>Status</span><select name="ativo">${manter}<option value="1">Ativo</option><option value="0">Inativo</option></select></label>`,
     async onSubmit(form) {
       const campos = {};
-      for (const k of ['torre_id', 'turno_id', 'mesa_id', 'sobreaviso_torre_id']) {
+      for (const k of ['torre_id', 'turno_id', 'mesa_id', 'contrato_id', 'sobreaviso_torre_id']) {
         if (valor(form, k) !== '__manter') campos[k] = valor(form, k);
       }
       if (valor(form, 'ativo') !== '__manter') campos.ativo = valor(form, 'ativo') === '1';
@@ -1502,6 +1517,14 @@ function formColaborador(c = null) {
           (m) => `${m.codigo} — ${m.nome}`,
           'Sem mesa'
         )}</select></label>
+        <label class="field"><span>Contrato</span><select name="contrato_id">${opcoes(
+          state.contratos,
+          c?.contrato_id,
+          (x) => `${x.codigo} — ${x.nome}`,
+          'Sem contrato'
+        )}</select></label>
+      </div>
+      <div class="row">
         <label class="field"><span>Sobreaviso</span><select name="sobreaviso_torre_id">${opcoes(
           torresSA,
           c?.sobreaviso_torre_id,
@@ -1519,6 +1542,7 @@ function formColaborador(c = null) {
         turno_id: valor(form, 'turno_id'),
         sobreaviso_torre_id: valor(form, 'sobreaviso_torre_id'),
         mesa_id: valor(form, 'mesa_id'),
+        contrato_id: valor(form, 'contrato_id'),
         ativo: marcado(form, 'ativo'),
       };
       await api(c ? 'PUT' : 'POST', c ? `/colaboradores/${c.id}` : '/colaboradores', body);
@@ -1688,21 +1712,23 @@ function viewTurnos() {
 
 // ---------- início ----------
 
-function viewMesas() {
-  const contar = (m) => state.colaboradores.filter((c) => c.mesa_id === m.id).length;
+// Cadastros simples (código, nome, cor, ordem, ativo) usados como tag do colaborador: Mesas e Contratos.
+function telaCadastroSimples({ titulo, subtitulo, recurso, campo, novo, feminino, cor, tag }) {
+  const contar = (x) => state.colaboradores.filter((c) => c[campo] === x.id).length;
+  const ativo = feminino ? ['Ativa', 'Inativa'] : ['Ativo', 'Inativo'];
   telaCadastro({
-    titulo: 'Mesas',
-    subtitulo: 'Mesas de trabalho. Cada colaborador pode ter uma mesa, exibida como tag.',
-    recurso: 'mesas',
-    novo: 'Nova mesa',
+    titulo,
+    subtitulo,
+    recurso,
+    novo,
     colunas: ['Ordem', 'Tag', 'Nome', 'Colaboradores', 'Status'],
-    linha: (m) => [m.ordem, tagMesa(m), esc(m.nome), contar(m), m.ativo ? 'Ativa' : 'Inativa'],
-    emUso: (m) => contar(m) > 0,
-    corpo: (m) => `${camposComuns(m, '#0f766e')}
+    linha: (x) => [x.ordem, tag(x), esc(x.nome), contar(x), x.ativo ? ativo[0] : ativo[1]],
+    emUso: (x) => contar(x) > 0,
+    corpo: (x) => `${camposComuns(x, cor)}
       <label class="field"><span>Ordem de exibição</span><input type="number" name="ordem" min="0" step="1" value="${esc(
-        m?.ordem ?? state.mesas.length + 1
+        x?.ordem ?? state[recurso].length + 1
       )}"></label>
-      <label class="check"><input type="checkbox" name="ativo" ${!m || m.ativo ? 'checked' : ''}> Ativa</label>`,
+      <label class="check"><input type="checkbox" name="ativo" ${!x || x.ativo ? 'checked' : ''}> ${ativo[0]}</label>`,
     form: (f) => ({
       codigo: valor(f, 'codigo'),
       nome: valor(f, 'nome'),
@@ -1710,6 +1736,32 @@ function viewMesas() {
       ordem: valor(f, 'ordem'),
       ativo: marcado(f, 'ativo'),
     }),
+  });
+}
+
+function viewMesas() {
+  telaCadastroSimples({
+    titulo: 'Mesas',
+    subtitulo: 'Mesas de trabalho. Cada colaborador pode ter uma mesa, exibida como tag.',
+    recurso: 'mesas',
+    campo: 'mesa_id',
+    novo: 'Nova mesa',
+    feminino: true,
+    cor: '#0f766e',
+    tag: tagMesa,
+  });
+}
+
+function viewContratos() {
+  telaCadastroSimples({
+    titulo: 'Contratos',
+    subtitulo: 'Contratos dos colaboradores. Cada colaborador pode ter um contrato, exibido como tag.',
+    recurso: 'contratos',
+    campo: 'contrato_id',
+    novo: 'Novo contrato',
+    feminino: false,
+    cor: '#b45309',
+    tag: tagContrato,
   });
 }
 

@@ -29,8 +29,10 @@ const TABELAS = {
   ],
   turnos: ['id', 'codigo', 'nome', 'inicio', 'fim', 'cor', 'padrao', 'grupo', 'ativo'],
   mesas: ['id', 'codigo', 'nome', 'cor', 'ordem', 'ativo'],
+  contratos: ['id', 'codigo', 'nome', 'cor', 'ordem', 'ativo'],
   colaboradores: [
-    'id', 'nome', 'email', 'telefone', 'torre_id', 'turno_id', 'sobreaviso_torre_id', 'mesa_id', 'ativo', 'admin', 'senha_hash', 'criado_em',
+    'id', 'nome', 'email', 'telefone', 'torre_id', 'turno_id', 'sobreaviso_torre_id', 'mesa_id', 'contrato_id', 'ativo', 'admin', 'senha_hash',
+    'criado_em',
   ],
   escala: ['colaborador_id', 'data', 'tipo', 'turno_id'],
   sobreaviso: ['torre_id', 'data', 'colaborador_id', 'horas'],
@@ -61,14 +63,14 @@ async function main() {
   }
 
   await destino.transacao(async () => {
-    await destino.exec('TRUNCATE sobreaviso, escala, colaboradores, mesas, turnos, torres RESTART IDENTITY CASCADE');
+    await destino.exec('TRUNCATE sobreaviso, escala, colaboradores, contratos, mesas, turnos, torres RESTART IDENTITY CASCADE');
     for (const [tabela, cols] of Object.entries(colunas)) {
       const marcadores = cols.map(() => '?').join(', ');
       for (const linha of dados[tabela]) {
         await destino.exec(`INSERT INTO ${tabela} (${cols.join(', ')}) VALUES (${marcadores})`, cols.map((c) => linha[c]));
       }
     }
-    for (const tabela of ['torres', 'turnos', 'mesas', 'colaboradores']) {
+    for (const tabela of ['torres', 'turnos', 'mesas', 'contratos', 'colaboradores']) {
       await destino.q(`SELECT setval(pg_get_serial_sequence('${tabela}', 'id'), GREATEST((SELECT MAX(id) FROM ${tabela}), 1))`);
     }
   });
