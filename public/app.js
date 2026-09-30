@@ -245,7 +245,12 @@ function rota() {
     state.rascunho.clear();
   }
   const nome = location.hash.slice(1);
-  const view = VIEWS[nome] ? nome : 'escala';
+  let view = VIEWS[nome] ? nome : 'escala';
+  // A tela de colaboradores é só para admins.
+  if (view === 'colaboradores' && !state.usuario.admin) {
+    view = 'escala';
+    history.replaceState(null, '', '#escala');
+  }
   const nav = NAV_DA_VIEW[view] || view;
   document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === nav));
   fecharPopover();
@@ -1355,7 +1360,12 @@ function renderColaboradores() {
       try {
         await api('PUT', `/colaboradores/${c.id}/admin`, { admin: adm.checked });
         toast(`${c.nome} ${adm.checked ? 'agora é administrador' : 'deixou de ser administrador'}.`);
-        if (c.id === state.usuario.id && !adm.checked) state.usuario.admin = false;
+        if (c.id === state.usuario.id && !adm.checked) {
+          state.usuario.admin = false;
+          renderUsuario();
+          location.hash = '#escala';
+          return;
+        }
       } catch (err) {
         toast(err.message, true);
       }
@@ -1949,6 +1959,9 @@ function telaLogin() {
 function renderUsuario() {
   const el = $('#usuario');
   const u = state.usuario;
+  // Item "Colaboradores" do menu só para admins.
+  const menuColab = document.querySelector('nav a[data-view="colaboradores"]');
+  if (menuColab) menuColab.hidden = !u?.admin;
   el.hidden = !u;
   if (!u) return;
   el.innerHTML = `
