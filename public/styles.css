@@ -404,3 +404,9 @@ button.recolher:hover { background: rgba(255, 255, 255, .3); }
 .grid-wrap.recolhido table.grid.planilha .pl { grid-template-columns: minmax(0, 1fr); }
 .grid-wrap.recolhido table.grid.planilha .pl > span:not(:first-child) { display: none; }
 .grid-wrap.recolhido table.grid tr.group td.name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Escala em modo leitura (quem não é admin) */
+.grid-wrap.somente-leitura table.grid td.cell,
+.grid-wrap.somente-leitura table.grid td.sa-cell { cursor: default; }
+.grid-wrap.somente-leitura table.grid td.cell:hover,
+.grid-wrap.somente-leitura table.grid td.sa-cell:hover { outline: none; }

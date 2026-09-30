@@ -270,7 +270,11 @@ function viewEscala() {
   const f = state.filtro;
   main.innerHTML = `
     <div class="page-head">
-      <div><h1>Escala</h1><p>Clique numa célula para definir o turno, ou escolha um pincel na legenda e arraste.</p></div>
+      <div><h1>Escala</h1><p>${
+        podeEditarEscala()
+          ? 'Clique numa célula para definir o turno, ou escolha um pincel na legenda e arraste.'
+          : 'Somente leitura: apenas administradores editam a escala.'
+      }</p></div>
       <div class="month-nav">
         <button class="icon" id="mes-ant" title="Mês anterior">‹</button>
         <strong id="mes-label">${esc(rotuloMes(state.mes))}</strong>
@@ -740,11 +744,20 @@ function renderGrade() {
   if (secoes.length) html += '</tbody></table>';
   wrap.innerHTML = html;
   wrap.classList.toggle('recolhido', state.detalhesRecolhidos);
+  wrap.classList.toggle('somente-leitura', !podeEditarEscala());
 }
+
+// Só admins lançam na escala e no sobreaviso; os demais veem em modo leitura.
+const podeEditarEscala = () => !!state.usuario?.admin;
 
 function renderLegenda() {
   const el = $('#legenda');
   if (!el) return;
+  if (!podeEditarEscala()) {
+    state.pincel = null;
+    el.innerHTML = '';
+    return;
+  }
   const item = (v, chip, rotulo, titulo = '') =>
     `<button data-pincel="${v}" class="${state.pincel === v ? 'active' : ''}" title="${esc(titulo)}">${chip}${esc(rotulo)}</button>`;
   const serie = lerSerie(state.serieSA);
@@ -1027,6 +1040,7 @@ function ligarEventosGrade() {
   const aplicaNoClique = () => state.pincel === 'SERIE' || (state.pincel === 'SA' && !pincelSAPontual());
 
   wrap.addEventListener('mousedown', (e) => {
+    if (!podeEditarEscala()) return;
     const td = alvo(e);
     if (!td || state.pincel === null || aplicaNoClique() || e.button !== 0) return;
     e.preventDefault();
@@ -1034,6 +1048,7 @@ function ligarEventosGrade() {
     pintar(td);
   });
   wrap.addEventListener('mouseover', (e) => {
+    if (!podeEditarEscala()) return;
     if (pintando) {
       const td = alvo(e);
       if (td) pintar(td);
@@ -1053,6 +1068,7 @@ function ligarEventosGrade() {
       salvarPreferencia('detalhesRecolhidos', state.detalhesRecolhidos ? '1' : '0');
       return renderGrade();
     }
+    if (!podeEditarEscala()) return;
     if (aplicaNoClique()) {
       const td = e.target.closest('td.sa-cell');
       if (!td) return;
