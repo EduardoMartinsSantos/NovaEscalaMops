@@ -393,3 +393,14 @@ td.acesso > div { display: flex; align-items: center; gap: 6px; font-size: 12px;
 .bloco-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 10px; flex-wrap: wrap; }
 .bloco-head h2 { margin: 0; font-size: 18px; }
 .bloco-head p { margin: 2px 0 0; font-size: 13px; }
+
+/* Escala: colunas Torre…Escala retráteis (botão ◂/▸ no cabeçalho "Nome") */
+button.recolher {
+  padding: 0 6px; margin-left: 6px; line-height: 16px; font-size: 11px; border-radius: 4px;
+  color: inherit; background: rgba(255, 255, 255, .15); border-color: rgba(255, 255, 255, .35);
+}
+button.recolher:hover { background: rgba(255, 255, 255, .3); }
+.grid-wrap.recolhido table.grid.planilha .name { min-width: 280px; max-width: 280px; }
+.grid-wrap.recolhido table.grid.planilha .pl { grid-template-columns: minmax(0, 1fr); }
+.grid-wrap.recolhido table.grid.planilha .pl > span:not(:first-child) { display: none; }
+.grid-wrap.recolhido table.grid tr.group td.name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

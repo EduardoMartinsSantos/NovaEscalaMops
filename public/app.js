@@ -94,6 +94,7 @@ const state = {
   mes: mesAtual(),
   filtro: { torre: '', turno: '', busca: '' },
   agrupar: lerPreferencia('agrupar', 'torre'), // 'torre' | 'turno'
+  detalhesRecolhidos: lerPreferencia('detalhesRecolhidos', '0') === '1', // colunas Torre…Escala recolhidas na escala
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
   filtroColab: { torre: '', turno: '', mesa: '', contrato: '', sa: '', busca: '' },
@@ -652,7 +653,11 @@ function renderGrade() {
     return [w === 0 || w === 6 ? 'we' : '', d === hoje ? 'hoje' : ''].join(' ');
   };
 
-  const cabNome = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Contrato</span><span>Horário</span><span>Escala</span></div>';
+  const botaoDetalhes = `<button class="recolher" data-recolher title="${
+    state.detalhesRecolhidos ? 'Mostrar' : 'Recolher'
+  } as colunas Torre, Turno, Mesa, Contrato, Horário e Escala">${state.detalhesRecolhidos ? '▸' : '◂'}</button>`;
+  const cabNome = `<div class="pl"><span>Nome ${botaoDetalhes}</span>`
+    + '<span>Torre</span><span>Turno</span><span>Mesa</span><span>Contrato</span><span>Horário</span><span>Escala</span></div>';
   const cabDias = dias
     .map((d) => `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
@@ -693,7 +698,8 @@ function renderGrade() {
   // Cada colaborador habilitado tem uma linha, com as horas de cada dia e o total do mês.
   const secoes = secoesSobreaviso();
   if (secoes.length) {
-    const cabSA = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Contrato</span><span>Horário</span><span>Horas</span></div>';
+    const cabSA = `<div class="pl"><span>Nome ${botaoDetalhes}</span>`
+      + '<span>Torre</span><span>Turno</span><span>Mesa</span><span>Contrato</span><span>Horário</span><span>Horas</span></div>';
     html += `<div class="tabela-titulo">Sobreaviso</div>
       <table class="grid sa-tabela planilha"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
   }
@@ -725,6 +731,7 @@ function renderGrade() {
   }
   if (secoes.length) html += '</tbody></table>';
   wrap.innerHTML = html;
+  wrap.classList.toggle('recolhido', state.detalhesRecolhidos);
 }
 
 function renderLegenda() {
@@ -1033,6 +1040,11 @@ function ligarEventosGrade() {
   wrap.addEventListener('mouseleave', limparPrevia);
 
   wrap.addEventListener('click', (e) => {
+    if (e.target.closest('[data-recolher]')) {
+      state.detalhesRecolhidos = !state.detalhesRecolhidos;
+      salvarPreferencia('detalhesRecolhidos', state.detalhesRecolhidos ? '1' : '0');
+      return renderGrade();
+    }
     if (aplicaNoClique()) {
       const td = e.target.closest('td.sa-cell');
       if (!td) return;
