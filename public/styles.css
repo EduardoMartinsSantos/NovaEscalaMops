@@ -381,3 +381,15 @@ table.grid.sa-tabela { border-top: 1px solid var(--border); }
 td.nowrap { white-space: nowrap; }
 td.acesso > div { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .tag.contrato::before { content: "§"; font-size: 10px; }
+
+/* Tela Cadastros: blocos */
+.atalhos { display: flex; gap: 6px; flex-wrap: wrap; margin: -6px 0 22px; }
+.atalhos a {
+  padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); text-decoration: none; font-size: 13px; font-weight: 500;
+}
+.atalhos a:hover { border-color: var(--primary); color: var(--primary); }
+.bloco-cadastro { margin-bottom: 36px; scroll-margin-top: 16px; }
+.bloco-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 10px; flex-wrap: wrap; }
+.bloco-head h2 { margin: 0; font-size: 18px; }
+.bloco-head p { margin: 2px 0 0; font-size: 13px; }

@@ -1,7 +1,7 @@
 # Nova Escala
 
 Escala de trabalho modular: cada colaborador carrega **tags** (colunas no banco) de **Torre**, **Turno** e **Sobreaviso**.
-Torres e turnos são cadastráveis pelo menu **Cadastros**.
+Torres, turnos, mesas, contratos e sobreaviso ficam na tela **Cadastros**, um bloco para cada.
 
 ## Acesso
 

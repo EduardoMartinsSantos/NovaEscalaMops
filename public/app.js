@@ -220,7 +220,18 @@ addEventListener('resize', fecharPopover);
 
 // ---------- roteamento ----------
 
-const VIEWS = { escala: viewEscala, colaboradores: viewColaboradores, torres: viewTorres, turnos: viewTurnos, mesas: viewMesas, contratos: viewContratos, sobreaviso: viewSobreaviso };
+const VIEWS = {
+  escala: viewEscala,
+  colaboradores: viewColaboradores,
+  cadastros: () => viewCadastros(),
+  // Endereços antigos de cada cadastro: abrem a tela Cadastros já no bloco.
+  torres: () => viewCadastros('torres'),
+  turnos: () => viewCadastros('turnos'),
+  mesas: () => viewCadastros('mesas'),
+  contratos: () => viewCadastros('contratos'),
+  sobreaviso: () => viewCadastros('sobreaviso'),
+};
+const NAV_DA_VIEW = { torres: 'cadastros', turnos: 'cadastros', mesas: 'cadastros', contratos: 'cadastros', sobreaviso: 'cadastros' };
 
 function rota() {
   if (!state.usuario) return telaLogin();
@@ -234,7 +245,8 @@ function rota() {
   }
   const nome = location.hash.slice(1);
   const view = VIEWS[nome] ? nome : 'escala';
-  document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === view));
+  const nav = NAV_DA_VIEW[view] || view;
+  document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === nav));
   fecharPopover();
   state.pincel = null;
   VIEWS[view]();
@@ -1558,17 +1570,19 @@ function formColaborador(c = null) {
 // =====================================================================
 
 // Tela de cadastro genérica: lista + formulário em dialog.
-function telaCadastro({ titulo, subtitulo, recurso, novo, colunas, linha, form, corpo, emUso, ordenar, aoAbrir }) {
-  main.innerHTML = `
-    <div class="page-head">
-      <div><h1>${esc(titulo)}</h1><p>${esc(subtitulo)}</p></div>
-      <button class="primary" id="novo">+ ${esc(novo)}</button>
+// Um bloco de cadastro (título, botão "+ Novo" e tabela) desenhado dentro de `alvo`.
+function telaCadastro({ titulo, subtitulo, recurso, novo, colunas, linha, form, corpo, emUso, ordenar, aoAbrir }, alvo = main) {
+  alvo.innerHTML = `
+    <div class="bloco-head">
+      <div><h2>${esc(titulo)}</h2><p class="muted">${esc(subtitulo)}</p></div>
+      <button class="primary" data-novo>+ ${esc(novo)}</button>
     </div>
-    <div class="card list-wrap" id="lista"></div>`;
+    <div class="card list-wrap" data-lista></div>`;
+  const listaEl = $('[data-lista]', alvo);
 
   const lista = () => (ordenar ? [...state[recurso]].sort(ordenar) : state[recurso]);
   const render = () => {
-    const el = $('#lista');
+    const el = listaEl;
     if (!lista().length) {
       el.innerHTML = '<div class="empty">Nada cadastrado ainda.</div>';
       return;
@@ -1593,13 +1607,13 @@ function telaCadastro({ titulo, subtitulo, recurso, novo, colunas, linha, form, 
       async onSubmit(f) {
         await api(x ? 'PUT' : 'POST', x ? `/${recurso}/${x.id}` : `/${recurso}`, form(f));
         await carregarBase();
-        render();
+        atualizarCadastros();
         toast('Salvo.');
       },
     });
 
-  $('#novo').onclick = () => abrir();
-  $('#lista').onclick = async (e) => {
+  $('[data-novo]', alvo).onclick = () => abrir();
+  listaEl.onclick = async (e) => {
     const ed = e.target.closest('[data-edit]');
     if (ed) return abrir(porId(lista(), Number(ed.dataset.edit)));
     const del = e.target.closest('[data-del]');
@@ -1610,7 +1624,7 @@ function telaCadastro({ titulo, subtitulo, recurso, novo, colunas, linha, form, 
     try {
       await api('DELETE', `/${recurso}/${x.id}`);
       await carregarBase();
-      render();
+      atualizarCadastros();
       toast('Excluído.');
     } catch (err) {
       toast(err.message, true);
@@ -1626,7 +1640,7 @@ const camposComuns = (x, corPadrao) => `
   </div>
   <label class="field"><span>Cor da tag</span><input type="color" name="cor" value="${esc(x?.cor || corPadrao)}"></label>`;
 
-function viewTorres() {
+function viewTorres(alvo) {
   const contar = (t) => state.colaboradores.filter((c) => c.torre_id === t.id).length;
   const contarSA = (t) => state.colaboradores.filter((c) => c.sobreaviso_torre_id === t.id).length;
   telaCadastro({
@@ -1666,10 +1680,10 @@ function viewTorres() {
       ordem: valor(f, 'ordem'),
       ativo: marcado(f, 'ativo'),
     }),
-  });
+  }, alvo);
 }
 
-function viewTurnos() {
+function viewTurnos(alvo) {
   const contar = (t) => state.colaboradores.filter((c) => c.turno_id === t.id).length;
   telaCadastro({
     titulo: 'Turnos',
@@ -1707,13 +1721,13 @@ function viewTurnos() {
       padrao: valor(f, 'padrao'),
       ativo: marcado(f, 'ativo'),
     }),
-  });
+  }, alvo);
 }
 
 // ---------- início ----------
 
 // Cadastros simples (código, nome, cor, ordem, ativo) usados como tag do colaborador: Mesas e Contratos.
-function telaCadastroSimples({ titulo, subtitulo, recurso, campo, novo, feminino, cor, tag }) {
+function telaCadastroSimples({ titulo, subtitulo, recurso, campo, novo, feminino, cor, tag }, alvo) {
   const contar = (x) => state.colaboradores.filter((c) => c[campo] === x.id).length;
   const ativo = feminino ? ['Ativa', 'Inativa'] : ['Ativo', 'Inativo'];
   telaCadastro({
@@ -1736,10 +1750,10 @@ function telaCadastroSimples({ titulo, subtitulo, recurso, campo, novo, feminino
       ordem: valor(f, 'ordem'),
       ativo: marcado(f, 'ativo'),
     }),
-  });
+  }, alvo);
 }
 
-function viewMesas() {
+function viewMesas(alvo) {
   telaCadastroSimples({
     titulo: 'Mesas',
     subtitulo: 'Mesas de trabalho. Cada colaborador pode ter uma mesa, exibida como tag.',
@@ -1749,10 +1763,10 @@ function viewMesas() {
     feminino: true,
     cor: '#0f766e',
     tag: tagMesa,
-  });
+  }, alvo);
 }
 
-function viewContratos() {
+function viewContratos(alvo) {
   telaCadastroSimples({
     titulo: 'Contratos',
     subtitulo: 'Contratos dos colaboradores. Cada colaborador pode ter um contrato, exibido como tag.',
@@ -1762,19 +1776,19 @@ function viewContratos() {
     feminino: false,
     cor: '#b45309',
     tag: tagContrato,
-  });
+  }, alvo);
 }
 
 // Cadastros → Sobreaviso: uma linha por torre com sobreaviso, com o interruptor que mostra/oculta
 // a seção dela na escala e no Excel (grava na hora; os lançamentos não são apagados).
-function viewSobreaviso() {
+function viewSobreaviso(alvo = main) {
   const torresSA = state.torres.filter((t) => t.permite_sobreaviso);
   const habilitados = (t) => state.colaboradores.filter((c) => c.ativo && c.sobreaviso_torre_id === t.id).length;
-  main.innerHTML = `
-    <div class="page-head">
-      <div><h1>Sobreaviso</h1><p>Ligue ou desligue o sobreaviso de cada torre na escala. Oculto, ele some da escala e do Excel, sem apagar os lançamentos.</p></div>
+  alvo.innerHTML = `
+    <div class="bloco-head">
+      <div><h2>Sobreaviso</h2><p class="muted">Horário e visibilidade do sobreaviso de cada torre. Oculto, ele some da escala e do Excel, sem apagar os lançamentos.</p></div>
     </div>
-    <div class="card list-wrap" id="lista">${
+    <div class="card list-wrap" data-lista>${
       torresSA.length
         ? `<table class="list"><thead><tr><th>Torre</th><th>Nome</th><th>Horário</th><th>Série fixa</th><th>Habilitados</th><th>Na escala</th></tr></thead>
           <tbody>${torresSA
@@ -1794,14 +1808,15 @@ function viewSobreaviso() {
               </tr>`
             )
             .join('')}</tbody></table>`
-        : '<div class="empty">Nenhuma torre com sobreaviso. Marque "Possui sobreaviso" em Cadastros → Torres.</div>'
+        : '<div class="empty">Nenhuma torre com sobreaviso. Marque "Possui sobreaviso" no bloco Torres.</div>'
     }</div>`;
+  const listaEl = $('[data-lista]', alvo);
 
-  $('#lista').onclick = (e) => {
+  listaEl.onclick = (e) => {
     const b = e.target.closest('[data-horario]');
     if (b) dialogHorarioSobreaviso(porId(state.torres, Number(b.dataset.horario)));
   };
-  $('#lista').onchange = async (e) => {
+  listaEl.onchange = async (e) => {
     const inp = e.target.closest('[data-sa-visivel]');
     if (!inp) return;
     const t = porId(state.torres, Number(inp.dataset.saVisivel));
@@ -1813,7 +1828,7 @@ function viewSobreaviso() {
     } catch (err) {
       toast(err.message, true);
     }
-    viewSobreaviso();
+    atualizarCadastros();
   };
 }
 
@@ -1829,10 +1844,44 @@ function dialogHorarioSobreaviso(t) {
     async onSubmit(form) {
       await api('PUT', `/torres/${t.id}`, { ...t, sobreaviso_inicio: valor(form, 'inicio'), sobreaviso_fim: valor(form, 'fim') });
       await carregarBase();
-      viewSobreaviso();
+      atualizarCadastros();
       toast(`Horário do sobreaviso ${t.codigo} salvo.`);
     },
   });
+}
+
+// ---------- Cadastros: todos os blocos numa tela só ----------
+
+const BLOCOS_CADASTRO = [
+  ['torres', 'Torres', viewTorres],
+  ['turnos', 'Turnos', viewTurnos],
+  ['mesas', 'Mesas', viewMesas],
+  ['contratos', 'Contratos', viewContratos],
+  ['sobreaviso', 'Sobreaviso', viewSobreaviso],
+];
+
+function viewCadastros(foco) {
+  main.innerHTML = `
+    <div class="page-head">
+      <div><h1>Cadastros</h1><p>Torres, turnos, mesas, contratos e sobreaviso num só lugar.</p></div>
+    </div>
+    <nav class="atalhos">${BLOCOS_CADASTRO.map(([id, nome]) => `<a href="#${id}" data-bloco="${id}">${nome}</a>`).join('')}</nav>
+    ${BLOCOS_CADASTRO.map(([id]) => `<section class="bloco-cadastro" id="bloco-${id}"></section>`).join('')}`;
+  for (const [id, , desenhar] of BLOCOS_CADASTRO) desenhar($(`#bloco-${id}`));
+  $('.atalhos').onclick = (e) => {
+    const a = e.target.closest('[data-bloco]');
+    if (!a) return;
+    e.preventDefault();
+    $(`#bloco-${a.dataset.bloco}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  if (foco) $(`#bloco-${foco}`)?.scrollIntoView({ block: 'start' });
+}
+
+// Depois de salvar em qualquer bloco, redesenha todos (um afeta o outro, ex.: torre ↔ sobreaviso) sem perder a rolagem.
+function atualizarCadastros() {
+  const y = window.scrollY;
+  viewCadastros();
+  window.scrollTo(0, y);
 }
 
 // ---------- login e sessão ----------
