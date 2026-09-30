@@ -30,7 +30,7 @@ const TABELAS = {
   turnos: ['id', 'codigo', 'nome', 'inicio', 'fim', 'cor', 'padrao', 'grupo', 'ativo'],
   mesas: ['id', 'codigo', 'nome', 'cor', 'ordem', 'ativo'],
   colaboradores: [
-    'id', 'nome', 'email', 'telefone', 'torre_id', 'turno_id', 'sobreaviso_torre_id', 'mesa_id', 'ativo', 'senha_hash', 'criado_em',
+    'id', 'nome', 'email', 'telefone', 'torre_id', 'turno_id', 'sobreaviso_torre_id', 'mesa_id', 'ativo', 'admin', 'senha_hash', 'criado_em',
   ],
   escala: ['colaborador_id', 'data', 'tipo', 'turno_id'],
   sobreaviso: ['torre_id', 'data', 'colaborador_id', 'horas'],

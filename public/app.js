@@ -1218,6 +1218,17 @@ function celulaTexto(c, campo, classe, tipo, travado = false) {
 }
 
 // Mesma linha nos dois modos; fora do modo edição os campos ficam travados (disabled).
+// Coluna "Acesso" (visível só para admins): funciona nos dois modos, fora do rascunho de edição.
+function celulaAcesso(c) {
+  return `<td class="acesso nowrap"><div>
+    <span class="${c.senha_padrao ? 'muted' : ''}" title="${c.senha_padrao ? 'Ainda usa a senha padrão' : 'Já trocou a senha'}">${
+      c.senha_padrao ? 'Senha padrão' : 'Senha própria'
+    }</span>
+    <button class="ghost icon" data-reset="${c.id}" title="Voltar a senha de ${esc(c.nome)} para a padrão">🔑</button>
+    <label class="interruptor" title="Administrador"><input type="checkbox" data-admin="${c.id}" ${c.admin ? 'checked' : ''}><span></span>Admin</label>
+  </div></td>`;
+}
+
 function linhaColaborador(c, torresSA, travado) {
   const ativo = normalizar(valorAtual(c, 'ativo')) === '1';
   return `
@@ -1231,6 +1242,7 @@ function linhaColaborador(c, torresSA, travado) {
     <td class="ed center ${alterado(c, 'ativo') ? 'alterado' : ''}"><input type="checkbox" data-f="ativo" ${ativo ? 'checked' : ''} ${
       travado ? 'disabled' : ''
     }></td>
+    ${state.usuario?.admin ? celulaAcesso(c) : ''}
     <td class="actions">${travado ? `<button class="ghost danger icon" data-del="${c.id}" title="Excluir">✕</button>` : ''}</td>`;
 }
 
@@ -1253,7 +1265,7 @@ function renderColaboradores() {
       <th class="sel"><input type="checkbox" id="sel-todos" title="Selecionar todos os exibidos" ${
         marcadosVisiveis === lista.length ? 'checked' : ''
       }></th>
-      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}<th>Sobreaviso</th><th>Ativo</th><th></th>
+      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}<th>Sobreaviso</th><th>Ativo</th>${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
     </tr></thead><tbody>${lista
       .map((c) => {
         const inativo = normalizar(valorAtual(c, 'ativo')) !== '1';
@@ -1289,7 +1301,21 @@ function renderColaboradores() {
     if (campo === 'ativo') inp.closest('tr').classList.toggle('inativo', !inp.checked);
     renderAcoesTabela();
   };
-  el.onchange = (e) => {
+  el.onchange = async (e) => {
+    const adm = e.target.closest('[data-admin]');
+    if (adm) {
+      const c = porId(state.colaboradores, Number(adm.dataset.admin));
+      adm.disabled = true;
+      try {
+        await api('PUT', `/colaboradores/${c.id}/admin`, { admin: adm.checked });
+        toast(`${c.nome} ${adm.checked ? 'agora é administrador' : 'deixou de ser administrador'}.`);
+        if (c.id === state.usuario.id && !adm.checked) state.usuario.admin = false;
+      } catch (err) {
+        toast(err.message, true);
+      }
+      await carregarBase();
+      return renderColaboradores();
+    }
     const inp = e.target.closest('[data-f]');
     if (inp) registrar(inp);
   };
@@ -1327,6 +1353,20 @@ function renderColaboradores() {
       else sel.delete(id);
       state.ultimoSelecionado = id;
       return renderColaboradores();
+    }
+    const reset = e.target.closest('[data-reset]');
+    if (reset) {
+      const c = porId(state.colaboradores, Number(reset.dataset.reset));
+      if (!confirm(`Voltar a senha de ${c.nome} para a senha padrão?`)) return;
+      try {
+        await api('POST', `/colaboradores/${c.id}/resetar-senha`);
+        toast(`Senha de ${c.nome} voltou para a padrão.`);
+        await carregarBase();
+        renderColaboradores();
+      } catch (err) {
+        toast(err.message, true);
+      }
+      return;
     }
     const del = e.target.closest('[data-del]');
     if (del) {
@@ -1783,7 +1823,7 @@ function renderUsuario() {
   el.hidden = !u;
   if (!u) return;
   el.innerHTML = `
-    <div class="usuario-nome" title="${esc(u.email)}">${esc(u.nome)}</div>
+    <div class="usuario-nome" title="${esc(u.email)}">${esc(u.nome)}${u.admin ? ' <span class="muted">· admin</span>' : ''}</div>
     <button class="ghost" id="btn-senha">Trocar senha</button>
     <button class="ghost" id="btn-sair">Sair</button>`;
   $('#btn-senha').onclick = dialogTrocarSenha;

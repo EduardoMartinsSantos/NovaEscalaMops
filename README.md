@@ -8,6 +8,10 @@ Torres e turnos são cadastráveis pelo menu **Cadastros**.
 Login com o **e-mail do colaborador** (só colaboradores ativos). Quem nunca trocou a senha entra com a senha padrão
 definida em `SENHA_PADRAO`; depois pode trocar em **Trocar senha**, no menu.
 
+**Administradores** veem a coluna **Acesso** em Colaboradores: se a pessoa ainda usa a senha padrão, o botão 🔑 que
+volta a senha dela para a padrão e o interruptor **Admin**. O primeiro admin é o colaborador do e-mail em `ADMIN_EMAIL`
+(enquanto não existir nenhum); o sistema não deixa ficar sem administrador ativo.
+
 ## Rodar localmente
 
 Requer Node.js 22+ e um Postgres (o mesmo Neon da Vercel ou outro).

@@ -379,3 +379,4 @@ table.grid.sa-tabela { border-top: 1px solid var(--border); }
 .interruptor input:checked + span::after { transform: translateX(14px); }
 .interruptor input:focus-visible + span { outline: 2px solid color-mix(in srgb, var(--primary) 50%, transparent); outline-offset: 2px; }
 td.nowrap { white-space: nowrap; }
+td.acesso > div { display: flex; align-items: center; gap: 6px; font-size: 12px; }
