@@ -336,6 +336,7 @@ function colaboradoresVisiveis() {
   return state.colaboradores.filter(
     (c) =>
       c.ativo &&
+      c.na_escala &&
       (!f.torre || String(c.torre_id) === f.torre) &&
       (!f.turno || String(c.turno_id) === f.turno) &&
       (!busca || c.nome.toLowerCase().includes(busca))
@@ -631,7 +632,9 @@ function secoesSobreaviso() {
         porPessoa: new Map(lanc.map((s) => [`${s.colaborador_id}|${s.data}`, s])),
         cobertos,
         habilitados: state.colaboradores
-          .filter((c) => (c.ativo && c.sobreaviso_torre_id === t.id) || lanc.some((s) => s.colaborador_id === c.id))
+          .filter(
+            (c) => c.na_escala && ((c.ativo && c.sobreaviso_torre_id === t.id) || lanc.some((s) => s.colaborador_id === c.id))
+          )
           .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
         descobertos: dias.filter((d) => !cobertos.has(d)).length,
         totalTorre: lanc.reduce((n, s) => n + (s.horas || 0), 0),
@@ -1282,6 +1285,9 @@ function linhaColaborador(c, torresSA, travado) {
     <td class="ed center ${alterado(c, 'ativo') ? 'alterado' : ''}"><input type="checkbox" data-f="ativo" ${ativo ? 'checked' : ''} ${
       travado ? 'disabled' : ''
     }></td>
+    <td class="ed center ${alterado(c, 'na_escala') ? 'alterado' : ''}"><input type="checkbox" data-f="na_escala" ${
+      normalizar(valorAtual(c, 'na_escala')) === '1' ? 'checked' : ''
+    } ${travado ? 'disabled' : ''} title="Aparece na escala"></td>
     ${state.usuario?.admin ? celulaAcesso(c) : ''}
     <td class="actions">${travado ? `<button class="ghost danger icon" data-del="${c.id}" title="Excluir">✕</button>` : ''}</td>`;
 }
@@ -1305,7 +1311,7 @@ function renderColaboradores() {
       <th class="sel"><input type="checkbox" id="sel-todos" title="Selecionar todos os exibidos" ${
         marcadosVisiveis === lista.length ? 'checked' : ''
       }></th>
-      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}${thOrdenavel('contrato_id', 'Contrato')}<th>Sobreaviso</th><th>Ativo</th>${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
+      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}${thOrdenavel('contrato_id', 'Contrato')}<th>Sobreaviso</th><th title="Acesso ao sistema">Ativo</th><th title="Aparece na escala">Na escala</th>${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
     </tr></thead><tbody>${lista
       .map((c) => {
         const inativo = normalizar(valorAtual(c, 'ativo')) !== '1';
@@ -1488,13 +1494,17 @@ function formLote() {
           'Nenhum'
         )}</label>
       </div>
-      <label class="field"><span>Status</span><select name="ativo">${manter}<option value="1">Ativo</option><option value="0">Inativo</option></select></label>`,
+      <div class="row">
+        <label class="field"><span>Status (acesso)</span><select name="ativo">${manter}<option value="1">Ativo</option><option value="0">Inativo</option></select></label>
+        <label class="field"><span>Na escala</span><select name="na_escala">${manter}<option value="1">Aparece</option><option value="0">Não aparece</option></select></label>
+      </div>`,
     async onSubmit(form) {
       const campos = {};
       for (const k of ['torre_id', 'turno_id', 'mesa_id', 'contrato_id', 'sobreaviso_torre_id']) {
         if (valor(form, k) !== '__manter') campos[k] = valor(form, k);
       }
       if (valor(form, 'ativo') !== '__manter') campos.ativo = valor(form, 'ativo') === '1';
+      if (valor(form, 'na_escala') !== '__manter') campos.na_escala = valor(form, 'na_escala') === '1';
       if (!Object.keys(campos).length) throw new Error('Altere ao menos um campo.');
       if (state.editando) {
         // No modo edição o lote entra no rascunho e é salvo junto com o resto.
@@ -1560,7 +1570,8 @@ function formColaborador(c = null) {
           'Nenhum'
         )}</select></label>
       </div>
-      <label class="check"><input type="checkbox" name="ativo" ${!c || c.ativo ? 'checked' : ''}> Ativo</label>`,
+      <label class="check"><input type="checkbox" name="ativo" ${!c || c.ativo ? 'checked' : ''}> Ativo (acesso ao sistema)</label>
+      <label class="check"><input type="checkbox" name="na_escala" ${!c || c.na_escala ? 'checked' : ''}> Aparece na escala</label>`,
     async onSubmit(form) {
       const body = {
         nome: valor(form, 'nome'),
@@ -1572,6 +1583,7 @@ function formColaborador(c = null) {
         mesa_id: valor(form, 'mesa_id'),
         contrato_id: valor(form, 'contrato_id'),
         ativo: marcado(form, 'ativo'),
+        na_escala: marcado(form, 'na_escala'),
       };
       await api(c ? 'PUT' : 'POST', c ? `/colaboradores/${c.id}` : '/colaboradores', body);
       await carregarBase();

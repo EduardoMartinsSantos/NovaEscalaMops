@@ -31,7 +31,8 @@ const TABELAS = {
   mesas: ['id', 'codigo', 'nome', 'cor', 'ordem', 'ativo'],
   contratos: ['id', 'codigo', 'nome', 'cor', 'ordem', 'ativo'],
   colaboradores: [
-    'id', 'nome', 'email', 'telefone', 'torre_id', 'turno_id', 'sobreaviso_torre_id', 'mesa_id', 'contrato_id', 'ativo', 'admin', 'senha_hash',
+    'id', 'nome', 'email', 'telefone', 'torre_id', 'turno_id', 'sobreaviso_torre_id', 'mesa_id', 'contrato_id', 'ativo', 'na_escala', 'admin',
+    'senha_hash',
     'criado_em',
   ],
   escala: ['colaborador_id', 'data', 'tipo', 'turno_id'],
