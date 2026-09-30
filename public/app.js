@@ -370,7 +370,7 @@ function exportarExcel() {
   const cel = new Map(celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
   const colabs = colaboradoresVisiveis();
   const fimDeSemana = (d) => [0, 6].includes(diaSemana(d));
-  const INFO = 6; // Nome, Torre, Turno, Mesa, Horário, Escala
+  const INFO = 7; // Nome, Torre, Turno, Mesa, Contrato, Horário, Escala
   const largura = INFO + dias.length;
   const linhas = [];
   const mesclar = [];
@@ -387,11 +387,13 @@ function exportarExcel() {
     const torre = porId(state.torres, c.torre_id);
     const turno = porId(state.turnos, c.turno_id);
     const mesa = porId(state.mesas, c.mesa_id);
+    const contrato = porId(state.contratos, c.contrato_id);
     return [
       { v: c.nome.toUpperCase(), e: { bold: true, align: 'left' } },
       { v: torre?.codigo || '' },
       { v: turno?.codigo || '' },
       { v: mesa?.codigo || '' },
+      { v: contrato?.codigo || '' },
       { v: horario ?? horarioDoTurno(turno) },
       escala || { v: (turno?.padrao || '').toUpperCase() },
     ];
@@ -407,7 +409,7 @@ function exportarExcel() {
     linhas.push({
       altura: 30,
       celulas: [
-        ...['NOME', 'TORRE', 'TURNO', 'MESA', 'HORÁRIO', ultima].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
+        ...['NOME', 'TORRE', 'TURNO', 'MESA', 'CONTRATO', 'HORÁRIO', ultima].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
         ...dias.map((d) => ({ v: `${SEMANA_ABREV[diaSemana(d)]}\n${d.slice(8)}/${d.slice(5, 7)}`, e: XL.cabecalho })),
       ],
     });
@@ -477,7 +479,7 @@ function exportarExcel() {
   const blob = criarXlsx({
     aba: `Escala ${state.mes}`,
     colunas: [
-      { largura: 38 }, { largura: 8 }, { largura: 8 }, { largura: 10 }, { largura: 15 }, { largura: 9 },
+      { largura: 38 }, { largura: 8 }, { largura: 8 }, { largura: 10 }, { largura: 11 }, { largura: 15 }, { largura: 9 },
       ...dias.map(() => ({ largura: 8 })),
     ],
     linhas,
@@ -502,11 +504,13 @@ function nomePlanilha(c, { escala, horario } = {}) {
   const torre = porId(state.torres, c.torre_id);
   const turno = porId(state.turnos, c.turno_id);
   const mesa = porId(state.mesas, c.mesa_id);
+  const contrato = porId(state.contratos, c.contrato_id);
   return `<div class="pl">
     <span class="n" title="${esc(c.nome)}">${esc(c.nome)}</span>
     <span>${esc(torre?.codigo || '')}</span>
     <span>${esc(turno?.codigo || '')}</span>
     <span>${esc(mesa?.codigo || '')}</span>
+    <span>${esc(contrato?.codigo || '')}</span>
     <span>${esc(horario ?? horarioDoTurno(turno))}</span>
     <span>${escala ?? esc((turno?.padrao || '').toUpperCase())}</span>
   </div>`;
@@ -648,7 +652,7 @@ function renderGrade() {
     return [w === 0 || w === 6 ? 'we' : '', d === hoje ? 'hoje' : ''].join(' ');
   };
 
-  const cabNome = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horário</span><span>Escala</span></div>';
+  const cabNome = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Contrato</span><span>Horário</span><span>Escala</span></div>';
   const cabDias = dias
     .map((d) => `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
@@ -689,7 +693,7 @@ function renderGrade() {
   // Cada colaborador habilitado tem uma linha, com as horas de cada dia e o total do mês.
   const secoes = secoesSobreaviso();
   if (secoes.length) {
-    const cabSA = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Horário</span><span>Horas</span></div>';
+    const cabSA = '<div class="pl"><span>Nome</span><span>Torre</span><span>Turno</span><span>Mesa</span><span>Contrato</span><span>Horário</span><span>Horas</span></div>';
     html += `<div class="tabela-titulo">Sobreaviso</div>
       <table class="grid sa-tabela planilha"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
   }
