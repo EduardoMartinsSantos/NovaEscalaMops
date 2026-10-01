@@ -557,7 +557,8 @@ const textoFds = (c) => (naoParticipaFds(c) ? 'Não participa' : horarioDoTurno(
 // Turno esperado do colaborador no dia: sábado/domingo usam o turno de fim de semana, se houver
 // (null = não trabalha no fim de semana).
 function turnoDoDia(c, data) {
-  if (!ehFimDeSemana(data)) return c?.turno_id ?? null;
+  // 12x36 trabalha pelo revezamento, inclusive no fim de semana: usa sempre o próprio turno.
+  if (!ehFimDeSemana(data) || porId(state.turnos, c?.turno_id)?.padrao === '12x36') return c?.turno_id ?? null;
   if (naoParticipaFds(c)) return null;
   return c?.turno_fds_id || c?.turno_id || null;
 }
