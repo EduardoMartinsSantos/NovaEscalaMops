@@ -97,6 +97,8 @@ const state = {
   // 'turno' | 'fds' (o agrupamento por torre foi removido; preferência antiga vira 'turno').
   agrupar: lerPreferencia('agrupar', 'turno') === 'fds' ? 'fds' : 'turno',
   detalhesRecolhidos: lerPreferencia('detalhesRecolhidos', '0') === '1', // colunas Torre…Escala recolhidas na escala
+  // Colunas de informação escondidas pela engrenagem da escala (chaves de COLUNAS_INFO).
+  colunasOcultas: new Set(lerPreferencia('colunasOcultas', '').split(',').filter(Boolean)),
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
   filtroColab: { busca: '' },
@@ -111,6 +113,18 @@ const state = {
 };
 
 const porId = (lista, id) => lista.find((x) => x.id === id);
+
+// Colunas de informação da escala (além do Nome, que é fixo) que podem ser escondidas pela engrenagem.
+// px = largura na tela; xl = largura no Excel.
+const COLUNAS_INFO = [
+  { k: 'torre', nome: 'Torre', px: 54, xl: 8 },
+  { k: 'turno', nome: 'Turno', px: 56, xl: 8 },
+  { k: 'mesa', nome: 'Mesa', px: 64, xl: 10 },
+  { k: 'contrato', nome: 'Contrato', px: 72, xl: 11 },
+  { k: 'horario', nome: 'Horário', px: 104, xl: 15 },
+  { k: 'horario_fds', nome: 'Horário FDS', px: 104, xl: 15 },
+  { k: 'escala', nome: 'Escala', px: 56, xl: 9 },
+];
 // Mínimo de pessoas em serviço num sábado/domingo; abaixo disso a linha "Em serviço" mostra "!!!".
 const MINIMO_FDS = 2;
 
@@ -299,6 +313,7 @@ function viewEscala() {
         <button data-g="fds" class="${state.agrupar === 'fds' ? 'active' : ''}" title="Agrupa pelo turno de fim de semana">Fim de semana</button>
       </div>
       <span class="spacer"></span>
+      <button class="icon" id="cfg-colunas" title="Escolher as colunas exibidas" aria-label="Escolher as colunas exibidas">⚙</button>
       <button id="btn-excel" class="primary">Exportar Excel</button>
       <a class="btn" id="btn-exportar" title="Exportar em CSV (texto simples)">CSV</a>
     </div>
@@ -319,6 +334,7 @@ function viewEscala() {
       toast(err.message, true);
     }
   };
+  $('#cfg-colunas').onclick = (e) => abrirColunas(e.currentTarget);
   $('#limpar-filtros-escala').onclick = () => {
     state.filtrosEscala = {};
     renderGrade();
@@ -387,7 +403,10 @@ function exportarExcel() {
   const cel = new Map(celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
   const colabs = colaboradoresVisiveis();
   const fimDeSemana = (d) => [0, 6].includes(diaSemana(d));
-  const INFO = 8; // Nome, Torre, Turno, Mesa, Contrato, Horário, Horário FDS, Escala
+  // Colunas de informação: Nome + as que não foram escondidas na engrenagem (mesma visão da tela).
+  const mostrar = [true, ...COLUNAS_INFO.map((c) => !state.colunasOcultas.has(c.k))];
+  const so = (lista) => lista.filter((_, i) => mostrar[i]);
+  const INFO = mostrar.filter(Boolean).length;
   const largura = INFO + dias.length;
   const linhas = [];
   const mesclar = [];
@@ -405,7 +424,7 @@ function exportarExcel() {
     const turno = porId(state.turnos, c.turno_id);
     const mesa = porId(state.mesas, c.mesa_id);
     const contrato = porId(state.contratos, c.contrato_id);
-    return [
+    return so([
       { v: c.nome.toUpperCase(), e: { bold: true, align: 'left' } },
       { v: torre?.codigo || '' },
       { v: turno?.codigo || '' },
@@ -414,7 +433,7 @@ function exportarExcel() {
       { v: horario ?? horarioDoTurno(turno) },
       { v: textoFds(c) },
       escala || { v: (turno?.padrao || '').toUpperCase() },
-    ];
+    ]);
   };
   const celulaDia = (x, d, c) => {
     if (!x) return { v: '', e: XL.folga }; // sem lançamento = folga
@@ -427,7 +446,7 @@ function exportarExcel() {
     linhas.push({
       altura: 30,
       celulas: [
-        ...['NOME', 'TORRE', 'TURNO', 'MESA', 'CONTRATO', 'HORÁRIO', 'HORÁRIO FDS', ultima].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
+        ...so(['NOME', 'TORRE', 'TURNO', 'MESA', 'CONTRATO', 'HORÁRIO', 'HORÁRIO FDS', ultima]).map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
         ...dias.map((d) => ({ v: `${SEMANA_ABREV[diaSemana(d)]}\n${d.slice(8)}/${d.slice(5, 7)}`, e: XL.cabecalho })),
       ],
     });
@@ -502,7 +521,7 @@ function exportarExcel() {
   const blob = criarXlsx({
     aba: `Escala ${state.mes}`,
     colunas: [
-      { largura: 38 }, { largura: 8 }, { largura: 8 }, { largura: 10 }, { largura: 11 }, { largura: 15 }, { largura: 15 }, { largura: 9 },
+      ...so([{ largura: 38 }, ...COLUNAS_INFO.map((c) => ({ largura: c.xl }))]),
       ...dias.map(() => ({ largura: 8 })),
     ],
     linhas,
@@ -532,13 +551,13 @@ function nomePlanilha(c, { escala, horario, arrastavel } = {}) {
     <span class="n" title="${esc(c.nome)}">${
       arrastavel ? '<span class="arrastar" draggable="true" title="Arraste para mudar a ordem dentro do grupo">⠿</span>' : ''
     }${esc(c.nome)}</span>
-    <span>${esc(torre?.codigo || '')}</span>
-    <span>${esc(turno?.codigo || '')}</span>
-    <span>${esc(mesa?.codigo || '')}</span>
-    <span>${esc(contrato?.codigo || '')}</span>
-    <span>${esc(horario ?? horarioDoTurno(turno))}</span>
-    <span title="Turno de fim de semana">${esc(textoFds(c))}</span>
-    <span>${escala ?? esc((turno?.padrao || '').toUpperCase())}</span>
+    <span data-k="torre">${esc(torre?.codigo || '')}</span>
+    <span data-k="turno">${esc(turno?.codigo || '')}</span>
+    <span data-k="mesa">${esc(mesa?.codigo || '')}</span>
+    <span data-k="contrato">${esc(contrato?.codigo || '')}</span>
+    <span data-k="horario">${esc(horario ?? horarioDoTurno(turno))}</span>
+    <span data-k="horario_fds" title="Turno de fim de semana">${esc(textoFds(c))}</span>
+    <span data-k="escala">${escala ?? esc((turno?.padrao || '').toUpperCase())}</span>
   </div>`;
 }
 
@@ -681,6 +700,43 @@ function gruposDaGrade(colabs) {
   return grupos.filter((g) => g.grupo.length);
 }
 
+// Esconde as colunas desmarcadas na engrenagem e ajusta a largura do bloco de informações.
+function aplicarColunas(wrap) {
+  const visiveis = COLUNAS_INFO.filter((c) => !state.colunasOcultas.has(c.k));
+  for (const c of COLUNAS_INFO) wrap.classList.toggle(`oc-${c.k}`, state.colunasOcultas.has(c.k));
+  wrap.style.setProperty('--pl-cols', ['minmax(0, 1fr)', ...visiveis.map((c) => `${c.px}px`)].join(' '));
+  wrap.style.setProperty('--pl-larg', `${254 + visiveis.reduce((n, c) => n + c.px + 8, 0)}px`);
+}
+
+// Engrenagem da escala: marcar/desmarcar as colunas exibidas (vale também para o Excel).
+function abrirColunas(ancora) {
+  const desenhar = () =>
+    `<div class="hd">Colunas exibidas</div>
+     <label class="col-opcao"><input type="checkbox" checked disabled> Nome</label>
+     ${COLUNAS_INFO.map(
+       (c) =>
+         `<label class="col-opcao"><input type="checkbox" data-coluna="${c.k}" ${state.colunasOcultas.has(c.k) ? '' : 'checked'}> ${esc(c.nome)}</label>`
+     ).join('')}
+     <hr><button data-todas>Mostrar todas</button>`;
+  const aplicar = () => {
+    salvarPreferencia('colunasOcultas', [...state.colunasOcultas].join(','));
+    aplicarColunas($('#grid'));
+  };
+  abrirPopover(ancora, desenhar(), null);
+  popover.onchange = (e) => {
+    const k = e.target.dataset?.coluna;
+    if (!k) return;
+    if (e.target.checked) state.colunasOcultas.delete(k);
+    else state.colunasOcultas.add(k);
+    aplicar();
+  };
+  popover.querySelector('[data-todas]').onclick = () => {
+    state.colunasOcultas.clear();
+    aplicar();
+    popover.querySelectorAll('[data-coluna]').forEach((i) => (i.checked = true));
+  };
+}
+
 // Dados de cada seção de sobreaviso do mês (usados pela grade e pelo Excel).
 // Cada colaborador habilitado tem uma linha; várias pessoas podem cobrir a mesma torre no mesmo dia.
 function secoesSobreaviso() {
@@ -728,8 +784,9 @@ function renderGrade() {
   } as colunas Torre, Turno, Mesa, Contrato, Horário e Escala">${state.detalhesRecolhidos ? '▸' : '◂'}</button>`;
   const bf = (chave) => botaoFiltro(chave, state.filtrosEscala);
   const cabNome = `<div class="pl"><span>Nome ${bf('nome')} ${botaoDetalhes}</span>`
-    + `<span>Torre ${bf('torre')}</span><span>Turno ${bf('turno')}</span><span>Mesa ${bf('mesa')}</span>`
-    + `<span>Contrato ${bf('contrato')}</span><span>Horário ${bf('horario')}</span><span>Horário FDS ${bf('horario_fds')}</span><span>Escala ${bf('escala')}</span></div>`;
+    + `<span data-k="torre">Torre ${bf('torre')}</span><span data-k="turno">Turno ${bf('turno')}</span><span data-k="mesa">Mesa ${bf('mesa')}</span>`
+    + `<span data-k="contrato">Contrato ${bf('contrato')}</span><span data-k="horario">Horário ${bf('horario')}</span>`
+    + `<span data-k="horario_fds">Horário FDS ${bf('horario_fds')}</span><span data-k="escala">Escala ${bf('escala')}</span></div>`;
   const cabDias = dias
     .map((d) => `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
@@ -778,8 +835,9 @@ function renderGrade() {
   const secoes = secoesSobreaviso();
   if (secoes.length) {
     const cabSA = `<div class="pl"><span>Nome ${bf('nome')} ${botaoDetalhes}</span>`
-      + `<span>Torre ${bf('torre')}</span><span>Turno ${bf('turno')}</span><span>Mesa ${bf('mesa')}</span>`
-      + `<span>Contrato ${bf('contrato')}</span><span>Horário</span><span>Horário FDS</span><span>Horas</span></div>`;
+      + `<span data-k="torre">Torre ${bf('torre')}</span><span data-k="turno">Turno ${bf('turno')}</span><span data-k="mesa">Mesa ${bf('mesa')}</span>`
+      + `<span data-k="contrato">Contrato ${bf('contrato')}</span><span data-k="horario">Horário</span><span data-k="horario_fds">Horário FDS</span>`
+      + `<span data-k="escala">Horas</span></div>`;
     html += `<div class="tabela-titulo">Sobreaviso</div>
       <table class="grid sa-tabela planilha"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
   }
@@ -820,6 +878,7 @@ function renderGrade() {
   if (secoes.length) html += '</tbody></table>';
   wrap.innerHTML = html;
   wrap.classList.toggle('recolhido', state.detalhesRecolhidos);
+  aplicarColunas(wrap);
   const limpar = $('#limpar-filtros-escala');
   if (limpar) limpar.hidden = !Object.keys(state.filtrosEscala).length;
   const ordemPadrao = $('#ordem-padrao');
