@@ -292,6 +292,7 @@ function viewEscala() {
         <span>Agrupar por</span>
         <button data-g="torre" class="${state.agrupar === 'torre' ? 'active' : ''}">Torre</button>
         <button data-g="turno" class="${state.agrupar === 'turno' ? 'active' : ''}">Turno</button>
+        <button data-g="fds" class="${state.agrupar === 'fds' ? 'active' : ''}" title="Agrupa pelo turno de fim de semana">Fim de semana</button>
       </div>
       <span class="spacer"></span>
       <button id="btn-excel" class="primary">Exportar Excel</button>
@@ -378,7 +379,7 @@ function exportarExcel() {
   const cel = new Map(celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
   const colabs = colaboradoresVisiveis();
   const fimDeSemana = (d) => [0, 6].includes(diaSemana(d));
-  const INFO = 7; // Nome, Torre, Turno, Mesa, Contrato, Horário, Escala
+  const INFO = 8; // Nome, Torre, Turno, Mesa, Contrato, Horário, Horário FDS, Escala
   const largura = INFO + dias.length;
   const linhas = [];
   const mesclar = [];
@@ -403,6 +404,7 @@ function exportarExcel() {
       { v: mesa?.codigo || '' },
       { v: contrato?.codigo || '' },
       { v: horario ?? horarioDoTurno(turno) },
+      { v: horarioDoTurno(porId(state.turnos, c.turno_fds_id)) },
       escala || { v: (turno?.padrao || '').toUpperCase() },
     ];
   };
@@ -417,7 +419,7 @@ function exportarExcel() {
     linhas.push({
       altura: 30,
       celulas: [
-        ...['NOME', 'TORRE', 'TURNO', 'MESA', 'CONTRATO', 'HORÁRIO', ultima].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
+        ...['NOME', 'TORRE', 'TURNO', 'MESA', 'CONTRATO', 'HORÁRIO', 'HORÁRIO FDS', ultima].map((v, i) => ({ v, e: { ...XL.cabecalho, align: i ? 'center' : 'left' } })),
         ...dias.map((d) => ({ v: `${SEMANA_ABREV[diaSemana(d)]}\n${d.slice(8)}/${d.slice(5, 7)}`, e: XL.cabecalho })),
       ],
     });
@@ -487,7 +489,7 @@ function exportarExcel() {
   const blob = criarXlsx({
     aba: `Escala ${state.mes}`,
     colunas: [
-      { largura: 38 }, { largura: 8 }, { largura: 8 }, { largura: 10 }, { largura: 11 }, { largura: 15 }, { largura: 9 },
+      { largura: 38 }, { largura: 8 }, { largura: 8 }, { largura: 10 }, { largura: 11 }, { largura: 15 }, { largura: 15 }, { largura: 9 },
       ...dias.map(() => ({ largura: 8 })),
     ],
     linhas,
@@ -513,6 +515,7 @@ function nomePlanilha(c, { escala, horario } = {}) {
   const turno = porId(state.turnos, c.turno_id);
   const mesa = porId(state.mesas, c.mesa_id);
   const contrato = porId(state.contratos, c.contrato_id);
+  const turnoFds = porId(state.turnos, c.turno_fds_id);
   return `<div class="pl">
     <span class="n" title="${esc(c.nome)}">${esc(c.nome)}</span>
     <span>${esc(torre?.codigo || '')}</span>
@@ -520,6 +523,7 @@ function nomePlanilha(c, { escala, horario } = {}) {
     <span>${esc(mesa?.codigo || '')}</span>
     <span>${esc(contrato?.codigo || '')}</span>
     <span>${esc(horario ?? horarioDoTurno(turno))}</span>
+    <span title="${esc(turnoFds ? `${turnoFds.codigo} · fim de semana` : 'Sem turno de fim de semana')}">${esc(horarioDoTurno(turnoFds))}</span>
     <span>${escala ?? esc((turno?.padrao || '').toUpperCase())}</span>
   </div>`;
 }
@@ -530,15 +534,18 @@ function classePlanilha(cel) {
 }
 
 const horarioDoTurno = (t) => (t ? `${t.inicio} às ${t.fim}` : '');
+const ehFimDeSemana = (data) => [0, 6].includes(new Date(`${data}T12:00:00`).getDay());
+// Turno esperado do colaborador no dia: sábado/domingo usam o turno de fim de semana, se houver.
+const turnoDoDia = (c, data) => (ehFimDeSemana(data) && c?.turno_fds_id ? c.turno_fds_id : c?.turno_id ?? null);
 // Horário do sobreaviso da torre (Cadastros → Sobreaviso); '—' se não definido.
 const horarioSobreaviso = (t) => (t?.sobreaviso_inicio ? `${t.sobreaviso_inicio} às ${t.sobreaviso_fim}` : '—');
 
-// Texto do quadrado do dia: vazio no turno da própria pessoa (o horário fica na coluna Horário);
-// o código do turno quando o dia é num turno diferente do cadastrado; férias e atestado por extenso.
+// Texto do quadrado do dia: vazio no turno esperado da pessoa naquele dia (normal ou de fim de semana — o horário
+// fica nas colunas); o código do turno quando é outro; férias e atestado por extenso.
 function textoPlanilha(cel, c) {
   if (!cel || cel.tipo === 'FOLGA') return '';
   if (cel.tipo === 'TURNO') {
-    return cel.turno_id !== c?.turno_id ? porId(state.turnos, cel.turno_id)?.codigo || '' : '';
+    return cel.turno_id !== turnoDoDia(c, cel.data) ? porId(state.turnos, cel.turno_id)?.codigo || '' : '';
   }
   return AUSENCIAS[cel.tipo].nome.toUpperCase();
 }
@@ -583,6 +590,27 @@ function grupos12x36(colabs) {
 }
 
 function gruposDaGrade(colabs) {
+  // Fim de semana: um grupo por turno de fim de semana (na ordem dos turnos) e, por último, quem não tem.
+  if (state.agrupar === 'fds') {
+    const ordemTorre = new Map(state.torres.map((t, i) => [t.id, i]));
+    const porTorre = (a, b) =>
+      (ordemTorre.get(a.torre_id) ?? 999) - (ordemTorre.get(b.torre_id) ?? 999) || a.nome.localeCompare(b.nome);
+    const turnos = [...state.turnos].sort(
+      (a, b) => ORDEM_PADRAO.indexOf(a.padrao) - ORDEM_PADRAO.indexOf(b.padrao) || a.inicio.localeCompare(b.inicio)
+    );
+    return [
+      ...turnos.map((t) => ({
+        titulo: `Fim de semana: ${t.codigo} — ${t.nome} (${t.inicio} às ${t.fim})`,
+        cabecalho: `<strong>FDS</strong> ${tagTurno(t)} ${esc(t.nome)} <span class="muted">${t.inicio} às ${t.fim}</span>`,
+        grupo: colabs.filter((c) => c.turno_fds_id === t.id).sort(porTorre),
+      })),
+      {
+        titulo: 'Sem turno de fim de semana',
+        cabecalho: '<strong>FDS</strong> <span class="muted">Sem turno de fim de semana</span>',
+        grupo: colabs.filter((c) => !c.turno_fds_id).sort(porTorre),
+      },
+    ].filter((g) => g.grupo.length);
+  }
   if (state.agrupar === 'turno') {
     const ordemTorre = new Map(state.torres.map((t, i) => [t.id, i]));
     const porTorre = (a, b) =>
@@ -671,7 +699,7 @@ function renderGrade() {
   const bf = (chave) => botaoFiltro(chave, state.filtrosEscala);
   const cabNome = `<div class="pl"><span>Nome ${bf('nome')} ${botaoDetalhes}</span>`
     + `<span>Torre ${bf('torre')}</span><span>Turno ${bf('turno')}</span><span>Mesa ${bf('mesa')}</span>`
-    + `<span>Contrato ${bf('contrato')}</span><span>Horário ${bf('horario')}</span><span>Escala ${bf('escala')}</span></div>`;
+    + `<span>Contrato ${bf('contrato')}</span><span>Horário ${bf('horario')}</span><span>Horário FDS ${bf('horario_fds')}</span><span>Escala ${bf('escala')}</span></div>`;
   const cabDias = dias
     .map((d) => `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
@@ -714,7 +742,7 @@ function renderGrade() {
   if (secoes.length) {
     const cabSA = `<div class="pl"><span>Nome ${bf('nome')} ${botaoDetalhes}</span>`
       + `<span>Torre ${bf('torre')}</span><span>Turno ${bf('turno')}</span><span>Mesa ${bf('mesa')}</span>`
-      + `<span>Contrato ${bf('contrato')}</span><span>Horário</span><span>Horas</span></div>`;
+      + `<span>Contrato ${bf('contrato')}</span><span>Horário</span><span>Horário FDS</span><span>Horas</span></div>`;
     html += `<div class="tabela-titulo">Sobreaviso</div>
       <table class="grid sa-tabela planilha"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
   }
@@ -815,15 +843,16 @@ function opcoesCelula() {
 }
 
 // "T:<id>" | FOLGA | FERIAS | ATESTADO | "" → corpo da API
-function decodificar(v, colaboradorId) {
+// "Trabalho" usa o turno do cadastro — no sábado/domingo, o turno de fim de semana (se a pessoa tiver).
+function decodificar(v, colaboradorId, data) {
   if (!v) return { tipo: null, turno_id: null };
-  if (v === 'TRABALHO') return { tipo: 'TURNO', turno_id: porId(state.colaboradores, colaboradorId)?.turno_id ?? null };
+  if (v === 'TRABALHO') return { tipo: 'TURNO', turno_id: turnoDoDia(porId(state.colaboradores, colaboradorId), data) };
   if (v.startsWith('T:')) return { tipo: 'TURNO', turno_id: Number(v.slice(2)) };
   return { tipo: v, turno_id: null };
 }
 
 async function aplicarCelula(colaboradorId, data, v) {
-  const { tipo, turno_id } = decodificar(v, colaboradorId);
+  const { tipo, turno_id } = decodificar(v, colaboradorId, data);
   const lista = state.escala.celulas;
   const i = lista.findIndex((c) => c.colaborador_id === colaboradorId && c.data === data);
   const anterior = i >= 0 ? lista[i] : null;
@@ -1179,6 +1208,7 @@ const COLUNAS_ESCALA = {
   mesa: { rotulo: 'Mesa', valor: (c) => codigoDe(state.mesas, c.mesa_id) },
   contrato: { rotulo: 'Contrato', valor: (c) => codigoDe(state.contratos, c.contrato_id) },
   horario: { rotulo: 'Horário', valor: (c) => horarioDoTurno(porId(state.turnos, c.turno_id)) },
+  horario_fds: { rotulo: 'Horário FDS', valor: (c) => horarioDoTurno(porId(state.turnos, c.turno_fds_id)) },
   escala: { rotulo: 'Escala', valor: (c) => (porId(state.turnos, c.turno_id)?.padrao || '').toUpperCase() },
 };
 
@@ -1188,6 +1218,7 @@ const COLUNAS_COLAB = {
   telefone: { rotulo: 'Telefone', valor: (c) => c.telefone || '' },
   torre: COLUNAS_ESCALA.torre,
   turno: COLUNAS_ESCALA.turno,
+  turno_fds: { rotulo: 'Turno FDS', titulo: 'Turno de fim de semana', valor: (c) => codigoDe(state.turnos, c.turno_fds_id) },
   mesa: COLUNAS_ESCALA.mesa,
   contrato: COLUNAS_ESCALA.contrato,
   sobreaviso: { rotulo: 'Sobreaviso', valor: (c) => codigoDe(state.torres, c.sobreaviso_torre_id) },
@@ -1319,6 +1350,7 @@ function abrirFiltro(ancora, { titulo, valores, selecionados, ordem = 0, aoOrden
 const CAMPOS_SELECT = {
   torre_id: () => state.torres,
   turno_id: () => state.turnos,
+  turno_fds_id: () => state.turnos,
   sobreaviso_torre_id: () => state.torres,
   mesa_id: () => state.mesas,
   contrato_id: () => state.contratos,
@@ -1429,6 +1461,7 @@ function linhaColaborador(c, torresSA, travado) {
     ${celulaTexto(c, 'telefone', 'w-tel', 'tel', travado)}
     ${celulaSelect(c, 'torre_id', state.torres, (t) => t.codigo, undefined, travado)}
     ${celulaSelect(c, 'turno_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`, undefined, travado)}
+    ${celulaSelect(c, 'turno_fds_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`, '—', travado)}
     ${celulaSelect(c, 'mesa_id', state.mesas, (m) => m.codigo, '—', travado)}
     ${celulaSelect(c, 'contrato_id', state.contratos, (x) => x.codigo, '—', travado)}
     ${celulaSelect(c, 'sobreaviso_torre_id', torresSA, (t) => t.codigo, '—', travado)}
@@ -1463,7 +1496,7 @@ function renderColaboradores() {
       <th class="sel"><input type="checkbox" id="sel-todos" title="Selecionar todos os exibidos" ${
         marcadosVisiveis === lista.length ? 'checked' : ''
       }></th>
-      ${['nome', 'email', 'telefone', 'torre', 'turno', 'mesa', 'contrato', 'sobreaviso', 'ativo', 'na_escala']
+      ${['nome', 'email', 'telefone', 'torre', 'turno', 'turno_fds', 'mesa', 'contrato', 'sobreaviso', 'ativo', 'na_escala']
         .map(thFiltroColab)
         .join('')}${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
     </tr></thead><tbody>${lista
@@ -1654,6 +1687,12 @@ function formLote() {
       <div class="row">
         <label class="field"><span>Torre</span>${sel('torre_id', state.torres, (t) => `${t.codigo} — ${t.nome}`)}</label>
         <label class="field"><span>Turno</span>${sel('turno_id', state.turnos, (t) => `${t.codigo} — ${t.inicio} às ${t.fim}`)}</label>
+        <label class="field"><span>Turno de fim de semana</span>${sel(
+          'turno_fds_id',
+          state.turnos,
+          (t) => `${t.codigo} — ${t.inicio} às ${t.fim}`,
+          'Sem turno de fim de semana'
+        )}</label>
       </div>
       <div class="row">
         <label class="field"><span>Mesa</span>${sel('mesa_id', state.mesas, (m) => `${m.codigo} — ${m.nome}`, 'Sem mesa')}</label>
@@ -1673,7 +1712,7 @@ function formLote() {
       </div>`,
     async onSubmit(form) {
       const campos = {};
-      for (const k of ['torre_id', 'turno_id', 'mesa_id', 'contrato_id', 'sobreaviso_torre_id']) {
+      for (const k of ['torre_id', 'turno_id', 'turno_fds_id', 'mesa_id', 'contrato_id', 'sobreaviso_torre_id']) {
         if (valor(form, k) !== '__manter') campos[k] = valor(form, k);
       }
       if (valor(form, 'ativo') !== '__manter') campos.ativo = valor(form, 'ativo') === '1';
@@ -1720,6 +1759,12 @@ function formColaborador(c = null) {
           (t) => `${t.codigo} — ${t.inicio} às ${t.fim}`,
           'Selecione…'
         )}</select></label>
+        <label class="field"><span>Turno de fim de semana</span><select name="turno_fds_id">${opcoes(
+          state.turnos,
+          c?.turno_fds_id,
+          (t) => `${t.codigo} — ${t.inicio} às ${t.fim}`,
+          'Sem turno de fim de semana'
+        )}</select></label>
       </div>
       <div class="row">
         <label class="field"><span>Mesa</span><select name="mesa_id">${opcoes(
@@ -1752,6 +1797,7 @@ function formColaborador(c = null) {
         telefone: valor(form, 'telefone'),
         torre_id: valor(form, 'torre_id'),
         turno_id: valor(form, 'turno_id'),
+        turno_fds_id: valor(form, 'turno_fds_id'),
         sobreaviso_torre_id: valor(form, 'sobreaviso_torre_id'),
         mesa_id: valor(form, 'mesa_id'),
         contrato_id: valor(form, 'contrato_id'),
