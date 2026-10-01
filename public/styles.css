@@ -317,7 +317,7 @@ table.grid td.sa-cell.previa::after {
   border: 1px dashed var(--c); opacity: .8;
 }
 table.grid td.sa-cell.previa-folga::after {
-  background: color-mix(in srgb, var(--muted) 12%, var(--surface)); color: var(--muted); border-color: var(--muted);
+  background: color-mix(in srgb, #e6a5a5 55%, var(--surface)); color: var(--text); border-color: #c0504d;
   font-weight: 500;
 }
 .serie-txt { font-size: 11px; margin-top: 2px; }

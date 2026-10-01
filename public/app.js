@@ -1065,7 +1065,8 @@ async function aplicarSerie(td, padrao, { fixa = false } = {}) {
     const data = somarDias(inicio, i);
     const j = lista.findIndex((s) => s.torre_id === torreId && s.data === data && s.colaborador_id === colaboradorId);
     if (j >= 0) lista.splice(j, 1);
-    if (h !== null) lista.push({ torre_id: torreId, data, colaborador_id: colaboradorId, horas: h });
+    // Dia de folga da série fica marcado como folga (vermelho).
+    lista.push({ torre_id: torreId, data, colaborador_id: colaboradorId, horas: h, tipo: h === null ? 'FOLGA' : '' });
   });
   limparPrevia();
   renderGrade();
