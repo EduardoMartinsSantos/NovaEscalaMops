@@ -410,3 +410,29 @@ button.recolher:hover { background: rgba(255, 255, 255, .3); }
 .grid-wrap.somente-leitura table.grid td.sa-cell { cursor: default; }
 .grid-wrap.somente-leitura table.grid td.cell:hover,
 .grid-wrap.somente-leitura table.grid td.sa-cell:hover { outline: none; }
+
+/* Filtro por coluna, estilo Excel */
+.filtro-btn {
+  padding: 0 4px; margin-left: 2px; line-height: 14px; font-size: 10px; border-radius: 4px; vertical-align: middle;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent); background: transparent; color: inherit; opacity: .75;
+}
+.filtro-btn:hover { opacity: 1; background: color-mix(in srgb, currentColor 15%, transparent); }
+.filtro-btn.ativo { opacity: 1; background: #f59e0b; border-color: #f59e0b; color: #1a1f29; }
+th.th-filtro { white-space: nowrap; }
+.filtro-painel {
+  position: fixed; z-index: 60; width: 260px; display: grid; gap: 4px; padding: 8px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
+  font-size: 13px; text-transform: none; font-weight: 400; text-align: left;
+}
+.filtro-painel > button.ghost { justify-content: flex-start; padding: 5px 8px; font-size: 13px; }
+.filtro-painel > button.ghost.ativo { color: var(--primary); font-weight: 600; }
+.filtro-painel hr { border: 0; border-top: 1px solid var(--border); margin: 2px 0; width: 100%; }
+.filtro-painel input[type=search] { width: 100%; margin: 4px 0 2px; }
+.filtro-lista { max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px 0; }
+.filtro-item { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 3px 10px; cursor: pointer; }
+.filtro-item:hover { background: var(--surface-2); }
+.filtro-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filtro-item small { color: var(--muted); font-size: 11px; }
+.filtro-tudo { border-bottom: 1px solid var(--border); padding-bottom: 5px; margin-bottom: 2px; font-weight: 600; }
+.filtro-vazio { padding: 10px; text-align: center; }
+.filtro-acoes { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }

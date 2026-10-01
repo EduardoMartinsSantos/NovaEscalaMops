@@ -92,17 +92,19 @@ const state = {
   contratos: [],
   colaboradores: [],
   mes: mesAtual(),
-  filtro: { torre: '', turno: '', busca: '' },
+  filtro: { busca: '' },
+  filtrosEscala: {}, // filtros por coluna da escala, estilo Excel (chave → Set de valores permitidos)
   agrupar: lerPreferencia('agrupar', 'torre'), // 'torre' | 'turno'
   detalhesRecolhidos: lerPreferencia('detalhesRecolhidos', '0') === '1', // colunas Torre…Escala recolhidas na escala
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
-  filtroColab: { torre: '', turno: '', mesa: '', contrato: '', sa: '', busca: '' },
+  filtroColab: { busca: '' },
+  filtrosColab: {}, // filtros por coluna da tela de colaboradores (chave → Set de valores permitidos)
   selecionados: new Set(), // ids marcados na lista de colaboradores
   editando: false, // tabela de colaboradores em modo edição
   rascunho: new Map(), // id → campos alterados ainda não salvos
   ultimoSelecionado: null,
-  ordemColab: { campo: '', dir: 1 }, // ordenação da tabela de colaboradores ('' = por nome)
+  ordemColab: { campo: '', dir: 1 }, // ordenação da tabela de colaboradores (chave de COLUNAS_COLAB; '' = por nome)
   escala: null,
   pincel: null, // valor aplicado direto ao clicar/arrastar nas células
 };
@@ -210,6 +212,7 @@ document.addEventListener('mousedown', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  fecharFiltro();
   fecharPopover();
   if (state.pincel !== null) {
     state.pincel = null;
@@ -283,13 +286,8 @@ function viewEscala() {
       </div>
     </div>
     <div class="toolbar">
-      <select id="f-torre"><option value="">Todas as torres</option>${state.torres
-        .map((t) => `<option value="${t.id}" ${String(t.id) === f.torre ? 'selected' : ''}>${esc(t.codigo)}</option>`)
-        .join('')}</select>
-      <select id="f-turno"><option value="">Todos os turnos</option>${state.turnos
-        .map((t) => `<option value="${t.id}" ${String(t.id) === f.turno ? 'selected' : ''}>${esc(t.codigo)}</option>`)
-        .join('')}</select>
       <input id="f-busca" type="search" placeholder="Buscar colaborador…" value="${esc(f.busca)}">
+      <button class="ghost" id="limpar-filtros-escala" title="Remover os filtros das colunas" hidden>✕ Limpar filtros</button>
       <div class="segmented" id="agrupar" role="group" aria-label="Agrupar por">
         <span>Agrupar por</span>
         <button data-g="torre" class="${state.agrupar === 'torre' ? 'active' : ''}">Torre</button>
@@ -305,8 +303,10 @@ function viewEscala() {
   $('#mes-ant').onclick = () => trocarMes(somarMes(state.mes, -1));
   $('#mes-prox').onclick = () => trocarMes(somarMes(state.mes, 1));
   $('#mes-hoje').onclick = () => trocarMes(mesAtual());
-  $('#f-torre').onchange = (e) => ((f.torre = e.target.value), renderGrade());
-  $('#f-turno').onchange = (e) => ((f.turno = e.target.value), renderGrade());
+  $('#limpar-filtros-escala').onclick = () => {
+    state.filtrosEscala = {};
+    renderGrade();
+  };
   $('#f-busca').oninput = (e) => ((f.busca = e.target.value), renderGrade());
   $('#agrupar').onclick = (e) => {
     const b = e.target.closest('button[data-g]');
@@ -339,17 +339,14 @@ async function carregarEscala() {
   }
 }
 
+// Busca por nome + filtros por coluna (vale para as três tabelas da escala e para o Excel).
+function passaFiltroEscala(c, ignorar) {
+  const busca = state.filtro.busca.trim().toLowerCase();
+  return (!busca || c.nome.toLowerCase().includes(busca)) && passaFiltros(c, COLUNAS_ESCALA, state.filtrosEscala, ignorar);
+}
+
 function colaboradoresVisiveis() {
-  const f = state.filtro;
-  const busca = f.busca.trim().toLowerCase();
-  return state.colaboradores.filter(
-    (c) =>
-      c.ativo &&
-      c.na_escala &&
-      (!f.torre || String(c.torre_id) === f.torre) &&
-      (!f.turno || String(c.turno_id) === f.turno) &&
-      (!busca || c.nome.toLowerCase().includes(busca))
-  );
+  return state.colaboradores.filter((c) => c.ativo && c.na_escala && passaFiltroEscala(c));
 }
 
 // ----- Exportar Excel: mesma visualização da tela (grupos, filtros, cores, 12x36 e sobreaviso) -----
@@ -642,7 +639,10 @@ function secoesSobreaviso() {
         cobertos,
         habilitados: state.colaboradores
           .filter(
-            (c) => c.na_escala && ((c.ativo && c.sobreaviso_torre_id === t.id) || lanc.some((s) => s.colaborador_id === c.id))
+            (c) =>
+              c.na_escala &&
+              passaFiltroEscala(c) &&
+              ((c.ativo && c.sobreaviso_torre_id === t.id) || lanc.some((s) => s.colaborador_id === c.id))
           )
           .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
         descobertos: dias.filter((d) => !cobertos.has(d)).length,
@@ -668,8 +668,10 @@ function renderGrade() {
   const botaoDetalhes = `<button class="recolher" data-recolher title="${
     state.detalhesRecolhidos ? 'Mostrar' : 'Recolher'
   } as colunas Torre, Turno, Mesa, Contrato, Horário e Escala">${state.detalhesRecolhidos ? '▸' : '◂'}</button>`;
-  const cabNome = `<div class="pl"><span>Nome ${botaoDetalhes}</span>`
-    + '<span>Torre</span><span>Turno</span><span>Mesa</span><span>Contrato</span><span>Horário</span><span>Escala</span></div>';
+  const bf = (chave) => botaoFiltro(chave, state.filtrosEscala);
+  const cabNome = `<div class="pl"><span>Nome ${bf('nome')} ${botaoDetalhes}</span>`
+    + `<span>Torre ${bf('torre')}</span><span>Turno ${bf('turno')}</span><span>Mesa ${bf('mesa')}</span>`
+    + `<span>Contrato ${bf('contrato')}</span><span>Horário ${bf('horario')}</span><span>Escala ${bf('escala')}</span></div>`;
   const cabDias = dias
     .map((d) => `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
@@ -710,8 +712,9 @@ function renderGrade() {
   // Cada colaborador habilitado tem uma linha, com as horas de cada dia e o total do mês.
   const secoes = secoesSobreaviso();
   if (secoes.length) {
-    const cabSA = `<div class="pl"><span>Nome ${botaoDetalhes}</span>`
-      + '<span>Torre</span><span>Turno</span><span>Mesa</span><span>Contrato</span><span>Horário</span><span>Horas</span></div>';
+    const cabSA = `<div class="pl"><span>Nome ${bf('nome')} ${botaoDetalhes}</span>`
+      + `<span>Torre ${bf('torre')}</span><span>Turno ${bf('turno')}</span><span>Mesa ${bf('mesa')}</span>`
+      + `<span>Contrato ${bf('contrato')}</span><span>Horário</span><span>Horas</span></div>`;
     html += `<div class="tabela-titulo">Sobreaviso</div>
       <table class="grid sa-tabela planilha"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
   }
@@ -744,6 +747,8 @@ function renderGrade() {
   if (secoes.length) html += '</tbody></table>';
   wrap.innerHTML = html;
   wrap.classList.toggle('recolhido', state.detalhesRecolhidos);
+  const limpar = $('#limpar-filtros-escala');
+  if (limpar) limpar.hidden = !Object.keys(state.filtrosEscala).length;
   wrap.classList.toggle('somente-leitura', !podeEditarEscala());
 }
 
@@ -1063,6 +1068,21 @@ function ligarEventosGrade() {
   wrap.addEventListener('mouseleave', limparPrevia);
 
   wrap.addEventListener('click', (e) => {
+    const bf = e.target.closest('[data-filtro]');
+    if (bf) {
+      const chave = bf.dataset.filtro;
+      const base = state.colaboradores.filter((c) => c.ativo && c.na_escala && passaFiltroEscala(c, chave));
+      return abrirFiltro(bf, {
+        titulo: COLUNAS_ESCALA[chave].rotulo,
+        valores: base.map(COLUNAS_ESCALA[chave].valor),
+        selecionados: state.filtrosEscala[chave],
+        aoAplicar(sel) {
+          if (sel) state.filtrosEscala[chave] = sel;
+          else delete state.filtrosEscala[chave];
+          renderGrade();
+        },
+      });
+    }
     if (e.target.closest('[data-recolher]')) {
       state.detalhesRecolhidos = !state.detalhesRecolhidos;
       salvarPreferencia('detalhesRecolhidos', state.detalhesRecolhidos ? '1' : '0');
@@ -1106,7 +1126,6 @@ function ligarEventosGrade() {
 
 function viewColaboradores() {
   const f = state.filtroColab;
-  const torresSA = state.torres.filter((t) => t.permite_sobreaviso);
   main.innerHTML = `
     <div class="page-head">
       <div><h1>Colaboradores</h1><p>Clique em Editar para alterar a tabela inteira; nada é gravado até Salvar alterações. Marque linhas para editar em massa.</p></div>
@@ -1114,74 +1133,184 @@ function viewColaboradores() {
     </div>
     <div class="toolbar">
       <input id="busca" type="search" placeholder="Buscar por nome, e-mail ou telefone…" value="${esc(f.busca)}" style="min-width:260px">
-      <select id="ft"><option value="">Torre: todas</option>${state.torres
-        .map((t) => `<option value="${t.id}" ${String(t.id) === f.torre ? 'selected' : ''}>${esc(t.codigo)}</option>`)
-        .join('')}</select>
-      <select id="fu"><option value="">Turno: todos</option>${state.turnos
-        .map((t) => `<option value="${t.id}" ${String(t.id) === f.turno ? 'selected' : ''}>${esc(t.codigo)}</option>`)
-        .join('')}</select>
-      <select id="fm"><option value="">Mesa: todas</option><option value="nenhuma" ${
-        f.mesa === 'nenhuma' ? 'selected' : ''
-      }>Sem mesa</option>${state.mesas
-        .map((m) => `<option value="${m.id}" ${String(m.id) === f.mesa ? 'selected' : ''}>${esc(m.codigo)}</option>`)
-        .join('')}</select>
-      <select id="fc"><option value="">Contrato: todos</option><option value="nenhum" ${
-        f.contrato === 'nenhum' ? 'selected' : ''
-      }>Sem contrato</option>${state.contratos
-        .map((x) => `<option value="${x.id}" ${String(x.id) === f.contrato ? 'selected' : ''}>${esc(x.codigo)}</option>`)
-        .join('')}</select>
-      <select id="fs"><option value="">Sobreaviso: todos</option><option value="nenhum" ${
-        f.sa === 'nenhum' ? 'selected' : ''
-      }>Sem sobreaviso</option>${torresSA
-        .map((t) => `<option value="${t.id}" ${String(t.id) === f.sa ? 'selected' : ''}>${esc(t.codigo)}</option>`)
-        .join('')}</select>
+      <button class="ghost" id="limpar-filtros-colab" title="Remover filtros e ordenação das colunas" hidden>✕ Limpar filtros</button>
     </div>
     <div class="lote-bar" id="lote" hidden></div>
     <div class="card list-wrap" id="lista"></div>`;
 
   renderAcoesTabela();
   $('#busca').oninput = (e) => ((f.busca = e.target.value), renderColaboradores());
-  $('#ft').onchange = (e) => ((f.torre = e.target.value), renderColaboradores());
-  $('#fu').onchange = (e) => ((f.turno = e.target.value), renderColaboradores());
-  $('#fs').onchange = (e) => ((f.sa = e.target.value), renderColaboradores());
-  $('#fm').onchange = (e) => ((f.mesa = e.target.value), renderColaboradores());
-  $('#fc').onchange = (e) => ((f.contrato = e.target.value), renderColaboradores());
+  $('#limpar-filtros-colab').onclick = () => {
+    state.filtrosColab = {};
+    state.ordemColab = { campo: '', dir: 1 };
+    renderColaboradores();
+  };
   renderColaboradores();
 }
 
-function colaboradoresFiltrados() {
-  const f = state.filtroColab;
-  const b = f.busca.trim().toLowerCase();
-  const lista = state.colaboradores.filter(
-    (c) =>
-      (!b || [c.nome, c.email, c.telefone].some((v) => v.toLowerCase().includes(b))) &&
-      (!f.torre || String(c.torre_id) === f.torre) &&
-      (!f.turno || String(c.turno_id) === f.turno) &&
-      (!f.sa || (f.sa === 'nenhum' ? !c.sobreaviso_torre_id : String(c.sobreaviso_torre_id) === f.sa)) &&
-      (!f.mesa || (f.mesa === 'nenhuma' ? !c.mesa_id : String(c.mesa_id) === f.mesa)) &&
-      (!f.contrato || (f.contrato === 'nenhum' ? !c.contrato_id : String(c.contrato_id) === f.contrato))
+function passaFiltroColab(c, ignorar) {
+  const b = state.filtroColab.busca.trim().toLowerCase();
+  return (
+    (!b || [c.nome, c.email, c.telefone].some((v) => (v || '').toLowerCase().includes(b))) &&
+    passaFiltros(c, COLUNAS_COLAB, state.filtrosColab, ignorar)
   );
+}
+
+function colaboradoresFiltrados() {
+  const lista = state.colaboradores.filter((c) => passaFiltroColab(c));
   const { campo, dir } = state.ordemColab;
   if (!campo) return lista;
-  // Ordena pelo código da tag (valor salvo, para as linhas não pularem durante a edição); empate por nome.
-  const codigo = (c) => porId(CAMPOS_SELECT[campo](), c[campo])?.codigo || '';
-  return lista.sort(
-    (a, b) => dir * codigo(a).localeCompare(codigo(b), 'pt-BR', { numeric: true }) || a.nome.localeCompare(b.nome, 'pt-BR')
-  );
+  // Ordena pelo valor salvo (as linhas não pulam durante a edição); empate por nome.
+  const valor = COLUNAS_COLAB[campo].valor;
+  return lista.sort((a, b) => dir * comparar(valor(a), valor(b)) || a.nome.localeCompare(b.nome, 'pt-BR'));
 }
 
-// Cabeçalho clicável: crescente → decrescente → sem ordenação.
-function thOrdenavel(campo, rotulo) {
-  const { campo: atual, dir } = state.ordemColab;
-  const seta = atual === campo ? (dir === 1 ? ' ▲' : ' ▼') : '';
-  return `<th class="ordenavel ${atual === campo ? 'ativo' : ''}" data-ordem="${campo}" title="Ordenar por ${rotulo}">${rotulo}${seta}</th>`;
+// ---------- Filtro por coluna, estilo Excel ----------
+// Cada coluna filtrável tem um botão ▾ no cabeçalho que abre um painel com ordenação (opcional), pesquisa e a lista
+// de valores existentes (com "(Selecionar tudo)" e "(Vazias)"). Filtro = Set dos valores permitidos; sem filtro = todos.
+
+const comparar = (a, b) => (a === '' ? (b === '' ? 0 : 1) : b === '' ? -1 : a.localeCompare(b, 'pt-BR', { numeric: true }));
+const codigoDe = (lista, id) => porId(lista, id)?.codigo || '';
+
+const COLUNAS_ESCALA = {
+  nome: { rotulo: 'Nome', valor: (c) => c.nome },
+  torre: { rotulo: 'Torre', valor: (c) => codigoDe(state.torres, c.torre_id) },
+  turno: { rotulo: 'Turno', valor: (c) => codigoDe(state.turnos, c.turno_id) },
+  mesa: { rotulo: 'Mesa', valor: (c) => codigoDe(state.mesas, c.mesa_id) },
+  contrato: { rotulo: 'Contrato', valor: (c) => codigoDe(state.contratos, c.contrato_id) },
+  horario: { rotulo: 'Horário', valor: (c) => horarioDoTurno(porId(state.turnos, c.turno_id)) },
+  escala: { rotulo: 'Escala', valor: (c) => (porId(state.turnos, c.turno_id)?.padrao || '').toUpperCase() },
+};
+
+const COLUNAS_COLAB = {
+  nome: { rotulo: 'Nome', valor: (c) => c.nome },
+  email: { rotulo: 'E-mail', valor: (c) => c.email || '' },
+  telefone: { rotulo: 'Telefone', valor: (c) => c.telefone || '' },
+  torre: COLUNAS_ESCALA.torre,
+  turno: COLUNAS_ESCALA.turno,
+  mesa: COLUNAS_ESCALA.mesa,
+  contrato: COLUNAS_ESCALA.contrato,
+  sobreaviso: { rotulo: 'Sobreaviso', valor: (c) => codigoDe(state.torres, c.sobreaviso_torre_id) },
+  ativo: { rotulo: 'Ativo', titulo: 'Acesso ao sistema', valor: (c) => (c.ativo ? 'Sim' : 'Não') },
+  na_escala: { rotulo: 'Na escala', titulo: 'Aparece na escala', valor: (c) => (c.na_escala ? 'Sim' : 'Não') },
+};
+
+function passaFiltros(item, colunas, filtros, ignorar) {
+  return Object.entries(filtros).every(([k, permitidos]) => k === ignorar || permitidos.has(colunas[k].valor(item)));
 }
 
-function alternarOrdem(campo) {
-  const o = state.ordemColab;
-  if (o.campo !== campo) Object.assign(o, { campo, dir: 1 });
-  else if (o.dir === 1) o.dir = -1;
-  else Object.assign(o, { campo: '', dir: 1 });
+function botaoFiltro(chave, filtros) {
+  return `<button class="filtro-btn ${filtros[chave] ? 'ativo' : ''}" data-filtro="${chave}" title="${
+    filtros[chave] ? 'Filtrado — clique para alterar' : 'Filtrar'
+  }">▾</button>`;
+}
+
+function thFiltroColab(chave) {
+  const col = COLUNAS_COLAB[chave];
+  const { campo, dir } = state.ordemColab;
+  const seta = campo === chave ? (dir === 1 ? ' ▲' : ' ▼') : '';
+  return `<th class="th-filtro" ${col.titulo ? `title="${col.titulo}"` : ''}>${col.rotulo}${seta} ${botaoFiltro(chave, state.filtrosColab)}</th>`;
+}
+
+let painelFiltro = null;
+function fecharFiltro() {
+  painelFiltro?.remove();
+  painelFiltro = null;
+}
+document.addEventListener('mousedown', (e) => {
+  if (painelFiltro && !painelFiltro.contains(e.target) && !e.target.closest('[data-filtro]')) fecharFiltro();
+});
+
+function abrirFiltro(ancora, { titulo, valores, selecionados, ordem = 0, aoOrdenar, aoAplicar }) {
+  fecharFiltro();
+  const contagem = new Map();
+  for (const v of valores) contagem.set(v, (contagem.get(v) || 0) + 1);
+  // Valores filtrados por outras colunas que já estavam marcados continuam na lista.
+  for (const v of selecionados || []) if (!contagem.has(v)) contagem.set(v, 0);
+  const distintos = [...contagem.keys()].sort(comparar);
+  const marcados = new Set(selecionados ? distintos.filter((v) => selecionados.has(v)) : distintos);
+
+  const p = document.createElement('div');
+  p.className = 'filtro-painel';
+  p.innerHTML = `
+    ${
+      aoOrdenar
+        ? `<button class="ghost ${ordem === 1 ? 'ativo' : ''}" data-ord="1">↑ Classificar de A a Z</button>
+           <button class="ghost ${ordem === -1 ? 'ativo' : ''}" data-ord="-1">↓ Classificar de Z a A</button><hr>`
+        : ''
+    }
+    <button class="ghost" data-limpar ${selecionados ? '' : 'disabled'}>✕ Limpar filtro de "${esc(titulo)}"</button>
+    <input type="search" placeholder="Pesquisar" data-busca>
+    <div class="filtro-lista" data-lista></div>
+    <div class="filtro-acoes"><button class="primary" data-ok>OK</button><button data-cancelar>Cancelar</button></div>`;
+  document.body.append(p);
+  painelFiltro = p;
+
+  const lista = p.querySelector('[data-lista]');
+  const busca = p.querySelector('[data-busca]');
+  const ok = p.querySelector('[data-ok]');
+  const rotulo = (v) => (v === '' ? '(Vazias)' : v);
+  const visiveis = () => {
+    const t = busca.value.trim().toLowerCase();
+    return distintos.filter((v) => !t || rotulo(v).toLowerCase().includes(t));
+  };
+  const desenhar = () => {
+    const vis = visiveis();
+    const todos = vis.length > 0 && vis.every((v) => marcados.has(v));
+    const algum = vis.some((v) => marcados.has(v));
+    lista.innerHTML = vis.length
+      ? `<label class="filtro-item filtro-tudo"><input type="checkbox" data-tudo ${todos ? 'checked' : ''}><span>(Selecionar tudo)</span></label>` +
+        vis
+          .map(
+            (v) => `<label class="filtro-item"><input type="checkbox" data-i="${distintos.indexOf(v)}" ${marcados.has(v) ? 'checked' : ''}>
+              <span class="${v === '' ? 'muted' : ''}">${esc(rotulo(v))}</span><small>${contagem.get(v)}</small></label>`
+          )
+          .join('')
+      : '<div class="muted filtro-vazio">Nenhum resultado</div>';
+    const tudo = lista.querySelector('[data-tudo]');
+    if (tudo) tudo.indeterminate = algum && !todos;
+    ok.disabled = !algum; // como no Excel: não dá para aplicar sem nenhum valor marcado
+  };
+  lista.onchange = (e) => {
+    if (e.target.matches('[data-tudo]')) visiveis().forEach((v) => (e.target.checked ? marcados.add(v) : marcados.delete(v)));
+    else {
+      const v = distintos[Number(e.target.dataset.i)];
+      if (e.target.checked) marcados.add(v);
+      else marcados.delete(v);
+    }
+    desenhar();
+  };
+  busca.oninput = desenhar;
+  busca.onkeydown = (e) => {
+    if (e.key === 'Enter' && !ok.disabled) ok.click();
+  };
+  p.onclick = (e) => {
+    if (e.target.closest('[data-cancelar]')) return fecharFiltro();
+    if (e.target.closest('[data-limpar]')) {
+      fecharFiltro();
+      return aoAplicar(null);
+    }
+    const ord = e.target.closest('[data-ord]');
+    if (ord) {
+      fecharFiltro();
+      return aoOrdenar(Number(ord.dataset.ord));
+    }
+    if (e.target.closest('[data-ok]')) {
+      // Com pesquisa, vale só o que está visível e marcado (como no Excel).
+      const escolhidos = new Set(busca.value.trim() ? visiveis().filter((v) => marcados.has(v)) : marcados);
+      fecharFiltro();
+      aoAplicar(escolhidos.size === distintos.length ? null : escolhidos);
+    }
+  };
+  desenhar();
+
+  // Posição: logo abaixo do botão, sem sair da janela.
+  const r = ancora.getBoundingClientRect();
+  const largura = p.offsetWidth || 260;
+  const altura = p.offsetHeight || 360;
+  p.style.left = `${Math.max(8, Math.min(r.left, innerWidth - largura - 8))}px`;
+  p.style.top = `${r.bottom + altura + 8 > innerHeight ? Math.max(8, r.top - altura - 4) : r.bottom + 4}px`;
+  busca.focus();
 }
 
 // ----- Tabela de colaboradores: leitura por padrão; "Editar" libera a tabela inteira -----
@@ -1315,6 +1444,8 @@ function linhaColaborador(c, torresSA, travado) {
 
 function renderColaboradores() {
   const lista = colaboradoresFiltrados();
+  const limpar = $('#limpar-filtros-colab');
+  if (limpar) limpar.hidden = !Object.keys(state.filtrosColab).length && !state.ordemColab.campo;
   const sel = state.selecionados;
   // Remove da seleção quem não existe mais (ex.: excluído).
   for (const id of sel) if (!porId(state.colaboradores, id)) sel.delete(id);
@@ -1332,7 +1463,9 @@ function renderColaboradores() {
       <th class="sel"><input type="checkbox" id="sel-todos" title="Selecionar todos os exibidos" ${
         marcadosVisiveis === lista.length ? 'checked' : ''
       }></th>
-      <th>Nome</th><th>E-mail</th><th>Telefone</th>${thOrdenavel('torre_id', 'Torre')}${thOrdenavel('turno_id', 'Turno')}${thOrdenavel('mesa_id', 'Mesa')}${thOrdenavel('contrato_id', 'Contrato')}<th>Sobreaviso</th><th title="Acesso ao sistema">Ativo</th><th title="Aparece na escala">Na escala</th>${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
+      ${['nome', 'email', 'telefone', 'torre', 'turno', 'mesa', 'contrato', 'sobreaviso', 'ativo', 'na_escala']
+        .map(thFiltroColab)
+        .join('')}${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
     </tr></thead><tbody>${lista
       .map((c) => {
         const inativo = normalizar(valorAtual(c, 'ativo')) !== '1';
@@ -1342,12 +1475,6 @@ function renderColaboradores() {
       })
       .join('')}</tbody></table>`;
 
-  el.querySelectorAll('th[data-ordem]').forEach((th) => {
-    th.onclick = () => {
-      alternarOrdem(th.dataset.ordem);
-      renderColaboradores();
-    };
-  });
 
   const todos = $('#sel-todos');
   todos.indeterminate = marcadosVisiveis > 0 && marcadosVisiveis < lista.length;
@@ -1413,6 +1540,26 @@ function renderColaboradores() {
   };
 
   el.onclick = async (e) => {
+    const bf = e.target.closest('[data-filtro]');
+    if (bf) {
+      const chave = bf.dataset.filtro;
+      const col = COLUNAS_COLAB[chave];
+      return abrirFiltro(bf, {
+        titulo: col.rotulo,
+        valores: state.colaboradores.filter((c) => passaFiltroColab(c, chave)).map(col.valor),
+        selecionados: state.filtrosColab[chave],
+        ordem: state.ordemColab.campo === chave ? state.ordemColab.dir : 0,
+        aoOrdenar(dir) {
+          state.ordemColab = { campo: chave, dir };
+          renderColaboradores();
+        },
+        aoAplicar(sel) {
+          if (sel) state.filtrosColab[chave] = sel;
+          else delete state.filtrosColab[chave];
+          renderColaboradores();
+        },
+      });
+    }
     const chk = e.target.closest('[data-sel]');
     if (chk) {
       const id = Number(chk.dataset.sel);
