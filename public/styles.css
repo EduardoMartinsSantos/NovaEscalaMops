@@ -494,3 +494,9 @@ table.grid tbody td.hoje { box-shadow: inset 2px 0 0 var(--hoje-destaque), inset
 .legenda-graf { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12px; color: var(--muted); }
 .legenda-graf span { display: inline-flex; align-items: center; gap: 5px; }
 .legenda-graf i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+
+/* "Em serviço" abaixo do mínimo no fim de semana */
+table.grid tfoot td.poucos-fds { background: #f4c7c7; color: #9c0006; font-weight: 700; }
+@media (prefers-color-scheme: dark) {
+  table.grid tfoot td.poucos-fds { background: #5c2626; color: #ffb4b4; }
+}
