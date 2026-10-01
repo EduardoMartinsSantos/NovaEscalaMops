@@ -851,13 +851,15 @@ function renderLegenda() {
       .filter((t) => t.permite_sobreaviso && t.padrao_sobreaviso)
       .map((t) => `${t.codigo}: ${descreverSerie(t.padrao_sobreaviso)}`)
       .join('\n') || 'Nenhuma torre com série fixa (Cadastros → Torres)';
-  // "Trabalho" aplica o turno cadastrado de cada colaborador; férias e atestado ficam no clique da célula.
+  // "Trabalho" aplica o turno cadastrado de cada colaborador; atestado fica no clique da célula.
+  // "Folga" e "Limpar" também valem nas linhas de sobreaviso (folga = sem sobreaviso no dia).
   // "Sobreaviso" usa a série configurável (⚙): com 1 dia é pontual e pinta arrastando; com mais, prévia + clique.
   // "Série" aplica a série fixa da torre (N3/ESPEC, N2…) a partir do dia clicado, com prévia ao passar o mouse.
   el.innerHTML =
     `<span class="label">Pincel:</span>` +
     item('TRABALHO', '<span class="chip trabalho">T</span>', 'Trabalho') +
-    item('FOLGA', `<span class="chip folga">${AUSENCIAS.FOLGA.sigla}</span>`, AUSENCIAS.FOLGA.nome) +
+    item('FOLGA', `<span class="chip folga">${AUSENCIAS.FOLGA.sigla}</span>`, AUSENCIAS.FOLGA.nome, 'Folga na escala; no sobreaviso, tira o sobreaviso do dia') +
+    item('FERIAS', `<span class="chip ferias">${AUSENCIAS.FERIAS.sigla}</span>`, AUSENCIAS.FERIAS.nome) +
     item('', '<span class="chip">⌫</span>', 'Limpar') +
     (state.torres.some((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
       ? `<span class="legend-sep"></span>` +
@@ -1108,8 +1110,8 @@ function serieDoPincel(td) {
 const pincelSAPontual = () => state.pincel === 'SA' && lerSerie(state.serieSA).length === 1;
 const horasPontuais = () => lerSerie(state.serieSA).find((h) => h !== null) ?? 8;
 
-// Aplica o pincel ativo numa célula (clique ou arraste): turnos/folga nas linhas de escala;
-// Sobreaviso de 1 dia nas linhas de sobreaviso. "Limpar" vale para as duas.
+// Aplica o pincel ativo numa célula (clique ou arraste): trabalho/folga/férias nas linhas de escala;
+// Sobreaviso de 1 dia nas linhas de sobreaviso. "Folga" e "Limpar" valem para as duas (no sobreaviso, removem o dia).
 function pintar(td) {
   if (td.matches('td.cell')) {
     if (state.pincel !== 'SA') aplicarCelula(Number(td.dataset.c), td.dataset.d, state.pincel);
@@ -1119,7 +1121,7 @@ function pintar(td) {
   if (pincelSAPontual()) {
     const h = lerSerie(state.serieSA)[0];
     aplicarSobreaviso(...args, h === null ? { remover: true } : { horas: h });
-  } else if (state.pincel === '') aplicarSobreaviso(...args, { remover: true });
+  } else if (state.pincel === '' || state.pincel === 'FOLGA') aplicarSobreaviso(...args, { remover: true });
 }
 
 // Grava a nova ordem de um grupo (ids na ordem desejada). Atualiza a tela na hora; em caso de erro, recarrega.
