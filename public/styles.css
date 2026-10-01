@@ -497,3 +497,11 @@ table.grid tbody td.hoje { box-shadow: inset 2px 0 0 var(--hoje-destaque), inset
 
 /* "Em serviço" abaixo do mínimo no fim de semana: sinal "!!!" ao lado do número */
 table.grid tfoot .alerta-fds { margin-left: 2px; font-weight: 800; letter-spacing: -1px; }
+
+/* Pincéis da escala como quadrados coloridos (sem texto) */
+.legend button.pincel-cor { padding: 3px; }
+.legend .quadrado { display: block; width: 22px; height: 22px; border-radius: 5px; background: var(--q); }
+.quadrado.q-trabalho { --q: #3fa35b; }
+.quadrado.q-folga { --q: #d9534f; }
+.quadrado.q-ferias { --q: #4a8fd6; }
+.quadrado.q-limpar { --q: #9ca3af; }

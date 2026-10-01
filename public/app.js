@@ -840,6 +840,11 @@ function renderLegenda() {
   }
   const item = (v, chip, rotulo, titulo = '') =>
     `<button data-pincel="${v}" class="${state.pincel === v ? 'active' : ''}" title="${esc(titulo)}">${chip}${esc(rotulo)}</button>`;
+  // Pincéis da escala: só um quadrado colorido (o nome fica na dica e para leitores de tela).
+  const quadrado = (v, cls, nome, titulo = nome) =>
+    `<button data-pincel="${v}" class="pincel-cor ${state.pincel === v ? 'active' : ''}" title="${esc(titulo)}" aria-label="${esc(
+      nome
+    )}"><span class="quadrado ${cls}"></span></button>`;
   const serie = lerSerie(state.serieSA);
   const resumoSA = serie.length === 1 ? (serie[0] === null ? 'folga' : fmtHoras(serie[0])) : `${serie.length} dias`;
   const fixas =
@@ -853,10 +858,10 @@ function renderLegenda() {
   // "Série" aplica a série fixa da torre (N3/ESPEC, N2…) a partir do dia clicado, com prévia ao passar o mouse.
   el.innerHTML =
     `<span class="label">Pincel:</span>` +
-    item('TRABALHO', '<span class="chip trabalho">T</span>', 'Trabalho') +
-    item('FOLGA', `<span class="chip folga">${AUSENCIAS.FOLGA.sigla}</span>`, AUSENCIAS.FOLGA.nome, 'Folga na escala ou no sobreaviso (no sobreaviso, substitui as horas do dia)') +
-    item('FERIAS', `<span class="chip ferias">${AUSENCIAS.FERIAS.sigla}</span>`, AUSENCIAS.FERIAS.nome) +
-    item('', '<span class="chip">⌫</span>', 'Limpar') +
+    quadrado('TRABALHO', 'q-trabalho', 'Trabalho') +
+    quadrado('FOLGA', 'q-folga', 'Folga', 'Folga — na escala ou no sobreaviso (no sobreaviso, substitui as horas do dia)') +
+    quadrado('FERIAS', 'q-ferias', 'Férias') +
+    quadrado('', 'q-limpar', 'Limpar', 'Limpar — apaga o lançamento do dia') +
     (state.torres.some((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
       ? `<span class="legend-sep"></span>` +
         item('SA', '<span class="chip sa-chip">☎</span>', 'Sobreaviso', `Série configurável: ${descreverSerie(state.serieSA)}`) +
