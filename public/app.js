@@ -94,7 +94,8 @@ const state = {
   mes: mesAtual(),
   filtro: { busca: '' },
   filtrosEscala: {}, // filtros por coluna da escala, estilo Excel (chave → Set de valores permitidos)
-  agrupar: lerPreferencia('agrupar', 'torre'), // 'torre' | 'turno'
+  // 'turno' | 'fds' (o agrupamento por torre foi removido; preferência antiga vira 'turno').
+  agrupar: lerPreferencia('agrupar', 'turno') === 'fds' ? 'fds' : 'turno',
   detalhesRecolhidos: lerPreferencia('detalhesRecolhidos', '0') === '1', // colunas Torre…Escala recolhidas na escala
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
@@ -294,7 +295,6 @@ function viewEscala() {
       <button class="ghost" id="ordem-padrao" title="Voltar as linhas para a ordem automática (torre/turno e nome)" hidden>↺ Ordem padrão</button>
       <div class="segmented" id="agrupar" role="group" aria-label="Agrupar por">
         <span>Agrupar por</span>
-        <button data-g="torre" class="${state.agrupar === 'torre' ? 'active' : ''}">Torre</button>
         <button data-g="turno" class="${state.agrupar === 'turno' ? 'active' : ''}">Turno</button>
         <button data-g="fds" class="${state.agrupar === 'fds' ? 'active' : ''}" title="Agrupa pelo turno de fim de semana">Fim de semana</button>
       </div>
@@ -656,45 +656,29 @@ function gruposDaGrade(colabs) {
       },
     ].filter((g) => g.grupo.length);
   }
-  if (state.agrupar === 'turno') {
-    const ordemTorre = new Map(state.torres.map((t, i) => [t.id, i]));
-    const porTorre = (a, b) =>
-      (ordemTorre.get(a.torre_id) ?? 999) - (ordemTorre.get(b.torre_id) ?? 999) || a.nome.localeCompare(b.nome);
-    const turnos = [...state.turnos].sort(
-      (a, b) => ORDEM_PADRAO.indexOf(a.padrao) - ORDEM_PADRAO.indexOf(b.padrao) || a.inicio.localeCompare(b.inicio)
-    );
-
-    // Os 12x36 ficam na tabela própria (grupos12x36).
-    const grupos = turnos
-      .filter((t) => t.padrao !== '12x36')
-      .map((t) => ({
-        titulo: `${t.codigo} — ${t.nome} (${t.inicio} às ${t.fim})`,
-        cabecalho: `${tagTurno(t)} ${esc(t.nome)} <span class="muted">${t.inicio} às ${t.fim}</span>`,
-        grupo: colabs.filter((c) => c.turno_id === t.id).sort(comOrdemManual(porTorre)),
-      }));
-    return grupos.filter((g) => g.grupo.length);
-  }
-  // Por torre: dentro de cada torre, colaboradores pela ordem dos turnos e depois nome.
-  // Turnos: pelo padrão (5x2, 6x1, 12x36…); dentro dele, por horário — exceto 12x36, por código (TPA, TPB, TPC…).
-  const porCodigo = (a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true });
-  const ordemTurno = new Map(
-    [...state.turnos]
-      .sort(
-        (a, b) =>
-          ORDEM_PADRAO.indexOf(a.padrao) - ORDEM_PADRAO.indexOf(b.padrao) ||
-          (a.padrao === '12x36' ? porCodigo(a, b) : a.inicio.localeCompare(b.inicio) || porCodigo(a, b))
-      )
-      .map((t, i) => [t.id, i])
+  // Por turno: dentro de cada turno, colaboradores pela ordem das torres e depois nome.
+  const ordemTorre = new Map(state.torres.map((t, i) => [t.id, i]));
+  const porTorre = (a, b) =>
+    (ordemTorre.get(a.torre_id) ?? 999) - (ordemTorre.get(b.torre_id) ?? 999) || a.nome.localeCompare(b.nome);
+  const turnos = [...state.turnos].sort(
+    (a, b) => ORDEM_PADRAO.indexOf(a.padrao) - ORDEM_PADRAO.indexOf(b.padrao) || a.inicio.localeCompare(b.inicio)
   );
-  const porTurno = (a, b) =>
-    (ordemTurno.get(a.turno_id) ?? 999) - (ordemTurno.get(b.turno_id) ?? 999) || a.nome.localeCompare(b.nome, 'pt-BR');
-  return state.torres
+
+  // Os 12x36 ficam na tabela própria (grupos12x36).
+  const grupos = turnos
+    .filter((t) => t.padrao !== '12x36')
     .map((t) => ({
-      titulo: `Torre ${t.codigo} — ${t.nome}`,
-      cabecalho: `${tagTorre(t)} ${esc(t.nome)}`,
-      grupo: colabs.filter((c) => c.torre_id === t.id).sort(comOrdemManual(porTurno)),
-    }))
-    .filter((g) => g.grupo.length);
+      titulo: `${t.codigo} — ${t.nome} (${t.inicio} às ${t.fim})`,
+      cabecalho: `${tagTurno(t)} ${esc(t.nome)} <span class="muted">${t.inicio} às ${t.fim}</span>`,
+      grupo: colabs.filter((c) => c.turno_id === t.id).sort(comOrdemManual(porTorre)),
+    }));
+  // Quem está sem turno (ou com um turno que não existe mais) não pode sumir da escala.
+  grupos.push({
+    titulo: 'Sem turno',
+    cabecalho: '<span class="muted">Sem turno</span>',
+    grupo: colabs.filter((c) => !porId(state.turnos, c.turno_id)).sort(comOrdemManual(porTorre)),
+  });
+  return grupos.filter((g) => g.grupo.length);
 }
 
 // Dados de cada seção de sobreaviso do mês (usados pela grade e pelo Excel).
