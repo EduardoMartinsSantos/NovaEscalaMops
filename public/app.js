@@ -225,6 +225,7 @@ addEventListener('resize', fecharPopover);
 // ---------- roteamento ----------
 
 const VIEWS = {
+  dashboard: viewDashboard,
   escala: viewEscala,
   colaboradores: viewColaboradores,
   cadastros: () => viewCadastros(),
@@ -1325,6 +1326,133 @@ function ligarEventosGrade() {
       aplicarSobreaviso(torreId, data, colaboradorId, existe ? { remover: true } : { horas: horasPontuais() });
     }
   });
+}
+
+// =====================================================================
+// DASHBOARD
+// =====================================================================
+
+// Situação de cada colaborador no dia (dia sem lançamento = folga, como na escala).
+const SITUACOES = [
+  { id: 'TURNO', nome: 'Em serviço', cor: '#3fa35b' },
+  { id: 'FOLGA', nome: 'Folga', cor: '#d9534f' },
+  { id: 'FERIAS', nome: 'Férias', cor: '#4a8fd6' },
+  { id: 'ATESTADO', nome: 'Atestado', cor: '#d9a520' },
+];
+
+function viewDashboard() {
+  state.dashData = state.dashData || hojeStr();
+  main.innerHTML = `
+    <div class="page-head">
+      <div><h1>Dashboard</h1><p>Equipe por torre: composição por turno e situação no dia escolhido.</p></div>
+      <div class="head-actions">
+        <label class="dash-dia">Dia <input type="date" id="dash-data" value="${state.dashData}"></label>
+        <button id="dash-hoje">Hoje</button>
+      </div>
+    </div>
+    <div id="dash"><div class="empty">Carregando…</div></div>`;
+  $('#dash-data').onchange = (e) => {
+    if (!e.target.value) return;
+    state.dashData = e.target.value;
+    carregarDashboard();
+  };
+  $('#dash-hoje').onclick = () => {
+    state.dashData = hojeStr();
+    $('#dash-data').value = state.dashData;
+    carregarDashboard();
+  };
+  carregarDashboard();
+}
+
+async function carregarDashboard() {
+  const data = state.dashData;
+  try {
+    const escala = await api('GET', `/escala?mes=${data.slice(0, 7)}`);
+    if (data === state.dashData && $('#dash')) renderDashboard(escala);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// Gráfico de barras horizontais empilhadas. linhas: [{ rotulo, valores: { serieId: n } }].
+function graficoBarras({ titulo, subtitulo, linhas, series }) {
+  const total = (l) => series.reduce((n, s) => n + (l.valores[s.id] || 0), 0);
+  const max = Math.max(1, ...linhas.map(total));
+  const usadas = series.filter((s) => linhas.some((l) => l.valores[s.id]));
+  const barras = linhas
+    .map((l) => {
+      const segs = usadas
+        .filter((s) => l.valores[s.id])
+        .map((s) => {
+          const n = l.valores[s.id];
+          return `<span class="barra-seg" style="--c:${esc(s.cor)}; width:${(n / max) * 100}%" title="${esc(s.nome)}: ${n}">${
+            n / max >= 0.07 ? n : ''
+          }</span>`;
+        })
+        .join('');
+      return `<div class="barra-linha"><div class="barra-rotulo">${l.rotulo}</div><div class="barra-trilho">${segs}</div><strong class="barra-total">${total(l)}</strong></div>`;
+    })
+    .join('');
+  return `<section class="card grafico">
+      <h2>${esc(titulo)}</h2>${subtitulo ? `<p class="muted">${esc(subtitulo)}</p>` : ''}
+      ${linhas.length ? barras : '<div class="empty">Sem colaboradores na escala.</div>'}
+      <div class="legenda-graf">${usadas.map((s) => `<span><i style="--c:${esc(s.cor)}"></i>${esc(s.nome)}</span>`).join('')}</div>
+    </section>`;
+}
+
+function renderDashboard(escala) {
+  const data = state.dashData;
+  const equipe = state.colaboradores.filter((c) => c.ativo && c.na_escala);
+  const cel = new Map(escala.celulas.filter((x) => x.data === data).map((x) => [x.colaborador_id, x]));
+  const situacao = (c) => cel.get(c.id)?.tipo || 'FOLGA';
+
+  // Torres na ordem do cadastro; quem não tem torre vai num grupo à parte.
+  const grupos = state.torres
+    .map((t) => ({ rotulo: tagTorre(t), membros: equipe.filter((c) => c.torre_id === t.id) }))
+    .filter((g) => g.membros.length);
+  const semTorre = equipe.filter((c) => !porId(state.torres, c.torre_id));
+  if (semTorre.length) grupos.push({ rotulo: '<span class="muted">Sem torre</span>', membros: semTorre });
+
+  // Turnos na mesma ordem da escala: padrão (5x2, 6x1, 12x36…), depois horário (12x36 por código).
+  const porCodigo = (a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true });
+  const turnos = [...state.turnos]
+    .sort(
+      (a, b) =>
+        ORDEM_PADRAO.indexOf(a.padrao) - ORDEM_PADRAO.indexOf(b.padrao) ||
+        (a.padrao === '12x36' ? porCodigo(a, b) : a.inicio.localeCompare(b.inicio) || porCodigo(a, b))
+    )
+    .map((t) => ({ id: String(t.id), nome: `${t.codigo} · ${t.inicio}–${t.fim}`, cor: t.cor }));
+  turnos.push({ id: 'sem', nome: 'Sem turno', cor: '#9ca3af' });
+
+  const contar = (membros, chave) =>
+    membros.reduce((acc, c) => {
+      const k = chave(c);
+      acc[k] = (acc[k] || 0) + 1;
+      return acc;
+    }, {});
+  const porTurno = grupos.map((g) => ({
+    rotulo: g.rotulo,
+    valores: contar(g.membros, (c) => (porId(state.turnos, c.turno_id) ? String(c.turno_id) : 'sem')),
+  }));
+  const porSituacao = grupos.map((g) => ({ rotulo: g.rotulo, valores: contar(g.membros, situacao) }));
+
+  const totais = contar(equipe, situacao);
+  const sobreaviso = new Set(escala.sobreaviso.filter((s) => s.data === data && !s.tipo).map((s) => s.colaborador_id)).size;
+  const [a, m, d] = data.split('-');
+  const rotuloDia = `${SEMANA_ABREV[diaSemana(data)]} ${d}/${m}/${a}${data === hojeStr() ? ' (hoje)' : ''}`;
+  const kpi = (valor, rotulo, cor) =>
+    `<div class="card kpi" ${cor ? `style="--c:${cor}"` : ''}><div class="v">${valor}</div><div class="r">${cor ? '<i></i>' : ''}${rotulo}</div></div>`;
+
+  $('#dash').innerHTML = `
+    <div class="dash-kpis">
+      ${kpi(equipe.length, 'Colaboradores na escala')}
+      ${SITUACOES.map((s) => kpi(totais[s.id] || 0, `${s.nome} · ${rotuloDia}`, s.cor)).join('')}
+      ${kpi(sobreaviso, `De sobreaviso · ${rotuloDia}`, '#7c3aed')}
+    </div>
+    <div class="dash-graficos">
+      ${graficoBarras({ titulo: 'Equipe por torre', subtitulo: 'Colaboradores ativos na escala, por turno', linhas: porTurno, series: turnos })}
+      ${graficoBarras({ titulo: 'Situação por torre', subtitulo: rotuloDia, linhas: porSituacao, series: SITUACOES })}
+    </div>`;
 }
 
 // =====================================================================
