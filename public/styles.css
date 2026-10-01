@@ -464,3 +464,9 @@ table.grid tr.recem-movida td { animation: recem-movida 1.2s ease-out; }
   table.grid tr.recem-movida td { animation: none; }
   .arrastar, .grid-wrap.em-arrasto table.grid tbody tr td { transition: none; }
 }
+
+/* Dia de hoje: cabeçalho em destaque e coluna contornada (sem apagar a cor da célula) */
+:root { --hoje-destaque: #f59e0b; }
+table.grid.planilha thead th.hoje { background: var(--hoje-destaque); color: #1f2937; }
+table.grid.planilha thead th.hoje small { color: #1f2937; font-weight: 700; }
+table.grid tbody td.hoje { box-shadow: inset 2px 0 0 var(--hoje-destaque), inset -2px 0 0 var(--hoje-destaque); }

@@ -797,7 +797,7 @@ function renderGrade() {
     html += `<tr class="group sa-group"><td class="name">Sobreaviso ${tagSobreaviso(t)} <span class="muted">(${habilitados.length}${
       totalTorre ? ` · ${fmtHoras(totalTorre)}` : ''
     })</span>${descobertos ? ` <span class="sa-alerta">${descobertos} dia(s) sem ninguém</span>` : ''}</td>${dias
-      .map((d) => `<td class="${cobertos.has(d) ? '' : 'sa-vazio'}" title="${cobertos.has(d) ? '' : 'Sem sobreaviso'}"></td>`)
+      .map((d) => `<td class="${cobertos.has(d) ? '' : 'sa-vazio'} ${d === hoje ? 'hoje' : ''}" title="${cobertos.has(d) ? '' : 'Sem sobreaviso'}"></td>`)
       .join('')}</tr>`;
     if (!habilitados.length) {
       html += `<tr><td class="name muted">Nenhum colaborador com sobreaviso ${esc(t.codigo)}.</td><td colspan="${dias.length}"></td></tr>`;
