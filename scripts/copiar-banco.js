@@ -36,7 +36,7 @@ const TABELAS = {
     'criado_em',
   ],
   escala: ['colaborador_id', 'data', 'tipo', 'turno_id'],
-  sobreaviso: ['torre_id', 'data', 'colaborador_id', 'horas'],
+  sobreaviso: ['torre_id', 'data', 'colaborador_id', 'horas', 'tipo'],
 };
 
 async function main() {

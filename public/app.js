@@ -492,6 +492,8 @@ function exportarExcel() {
           ...infoColaborador(c, { v: fmtHoras(totalDe(c.id)), e: XL.total }, horarioSobreaviso(t)),
           ...dias.map((d) => {
             const s = porPessoa.get(`${c.id}|${d}`);
+            if (s?.tipo === 'FOLGA') return { v: '', e: XL.folga };
+            if (s?.tipo === 'FERIAS') return { v: 'FÉRIAS', e: XL.ferias };
             if (s) return { v: s.horas != null ? fmtHoras(s.horas) : 'SOBREAVISO', e: corSA };
             return ausente(c.id, d) ? { v: '', e: XL.ausente } : vazioDoDia(d);
           }),
@@ -705,7 +707,8 @@ function secoesSobreaviso() {
     .filter((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
     .map((t) => {
       const lanc = sobreaviso.filter((s) => s.torre_id === t.id);
-      const cobertos = new Set(lanc.map((s) => s.data));
+      // Dias marcados como folga/férias no sobreaviso não contam como cobertos.
+      const cobertos = new Set(lanc.filter((s) => !s.tipo).map((s) => s.data));
       return {
         torre: t,
         porPessoa: new Map(lanc.map((s) => [`${s.colaborador_id}|${s.data}`, s])),
@@ -812,9 +815,17 @@ function renderGrade() {
         .map((d) => {
           const s = porPessoa.get(`${c.id}|${d}`);
           const aus = ausencia(c.id, d);
-          const conteudo = s ? (s.horas != null ? fmtHoras(s.horas) : 'SOBREAVISO') : '';
-          const titulo = s ? `Sobreaviso ${t.codigo}${s.horas != null ? ` · ${fmtHoras(s.horas)}` : ''}` : aus ? 'Ausente (férias/atestado)' : '';
-          return `<td class="sa-cell ${clsDia(d)} ${s ? 'sa-on' : ''} ${aus ? 'sa-aus' : ''}" style="--c:${esc(
+          const marca = s?.tipo ? AUSENCIAS[s.tipo] : null;
+          const conteudo = marca ? (s.tipo === 'FERIAS' ? 'FÉRIAS' : '') : s ? (s.horas != null ? fmtHoras(s.horas) : 'SOBREAVISO') : '';
+          const titulo = marca
+            ? `${marca.nome} no sobreaviso ${t.codigo}`
+            : s
+              ? `Sobreaviso ${t.codigo}${s.horas != null ? ` · ${fmtHoras(s.horas)}` : ''}`
+              : aus
+                ? 'Ausente (férias/atestado)'
+                : '';
+          const cls = marca ? `p-${marca.cls}` : s ? 'sa-on' : '';
+          return `<td class="sa-cell ${clsDia(d)} ${cls} ${aus && !s ? 'sa-aus' : ''}" style="--c:${esc(
             t.cor
           )}" data-t="${t.id}" data-c="${c.id}" data-d="${d}" title="${esc(titulo)}">${conteudo}</td>`;
         })
@@ -858,7 +869,7 @@ function renderLegenda() {
   el.innerHTML =
     `<span class="label">Pincel:</span>` +
     item('TRABALHO', '<span class="chip trabalho">T</span>', 'Trabalho') +
-    item('FOLGA', `<span class="chip folga">${AUSENCIAS.FOLGA.sigla}</span>`, AUSENCIAS.FOLGA.nome, 'Folga na escala; no sobreaviso, tira o sobreaviso do dia') +
+    item('FOLGA', `<span class="chip folga">${AUSENCIAS.FOLGA.sigla}</span>`, AUSENCIAS.FOLGA.nome, 'Folga na escala ou no sobreaviso (no sobreaviso, substitui as horas do dia)') +
     item('FERIAS', `<span class="chip ferias">${AUSENCIAS.FERIAS.sigla}</span>`, AUSENCIAS.FERIAS.nome) +
     item('', '<span class="chip">⌫</span>', 'Limpar') +
     (state.torres.some((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
@@ -1078,20 +1089,22 @@ async function aplicarSerie(td, padrao, { fixa = false } = {}) {
 }
 
 // Lança/atualiza as horas de um colaborador no sobreaviso da torre/dia, ou remove (remover: true).
-async function aplicarSobreaviso(torreId, data, colaboradorId, { horas = null, remover = false } = {}) {
+// tipo FOLGA/FERIAS marca o dia como folga/férias no sobreaviso (sem horas).
+async function aplicarSobreaviso(torreId, data, colaboradorId, { horas = null, remover = false, tipo = '' } = {}) {
   const lista = state.escala.sobreaviso;
   const i = lista.findIndex((s) => s.torre_id === torreId && s.data === data && s.colaborador_id === colaboradorId);
+  if (tipo) horas = null;
   if (remover) {
     if (i < 0) return;
     lista.splice(i, 1);
   } else {
-    if (i >= 0 && lista[i].horas === horas) return;
-    if (i >= 0) lista[i].horas = horas;
-    else lista.push({ torre_id: torreId, data, colaborador_id: colaboradorId, horas });
+    if (i >= 0 && lista[i].horas === horas && (lista[i].tipo || '') === tipo) return;
+    if (i >= 0) Object.assign(lista[i], { horas, tipo });
+    else lista.push({ torre_id: torreId, data, colaborador_id: colaboradorId, horas, tipo });
   }
   renderGrade();
   try {
-    await api('PUT', '/sobreaviso', { torre_id: torreId, data, colaborador_id: colaboradorId, horas, remover });
+    await api('PUT', '/sobreaviso', { torre_id: torreId, data, colaborador_id: colaboradorId, horas, remover, tipo });
   } catch (e) {
     toast(e.message, true);
     carregarEscala();
@@ -1111,7 +1124,8 @@ const pincelSAPontual = () => state.pincel === 'SA' && lerSerie(state.serieSA).l
 const horasPontuais = () => lerSerie(state.serieSA).find((h) => h !== null) ?? 8;
 
 // Aplica o pincel ativo numa célula (clique ou arraste): trabalho/folga/férias nas linhas de escala;
-// Sobreaviso de 1 dia nas linhas de sobreaviso. "Folga" e "Limpar" valem para as duas (no sobreaviso, removem o dia).
+// Sobreaviso de 1 dia nas linhas de sobreaviso. "Folga", "Férias" e "Limpar" valem para as duas
+// (no sobreaviso, Folga/Férias marcam o dia no lugar das horas e Limpar apaga).
 function pintar(td) {
   if (td.matches('td.cell')) {
     if (state.pincel !== 'SA') aplicarCelula(Number(td.dataset.c), td.dataset.d, state.pincel);
@@ -1121,7 +1135,8 @@ function pintar(td) {
   if (pincelSAPontual()) {
     const h = lerSerie(state.serieSA)[0];
     aplicarSobreaviso(...args, h === null ? { remover: true } : { horas: h });
-  } else if (state.pincel === '' || state.pincel === 'FOLGA') aplicarSobreaviso(...args, { remover: true });
+  } else if (state.pincel === 'FOLGA' || state.pincel === 'FERIAS') aplicarSobreaviso(...args, { tipo: state.pincel });
+  else if (state.pincel === '') aplicarSobreaviso(...args, { remover: true });
 }
 
 // Grava a nova ordem de um grupo (ids na ordem desejada). Atualiza a tela na hora; em caso de erro, recarrega.
