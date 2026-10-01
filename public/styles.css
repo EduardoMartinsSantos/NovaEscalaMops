@@ -299,7 +299,7 @@ table.grid tr.sa-group td.sa-vazio { background: color-mix(in srgb, var(--danger
 table.grid .sa-alerta { color: var(--danger); font-weight: 600; font-size: 11px; margin-left: 6px; text-transform: none; }
 table.grid tfoot tr.sa-row td { font-weight: 400; }
 table.grid td.sa-cell.sa-aus { background-image: repeating-linear-gradient(45deg, transparent 0 4px, color-mix(in srgb, var(--muted) 18%, transparent) 4px 8px); }
-table.grid.planilha td.sa-cell.sa-on { background: color-mix(in srgb, var(--c) 30%, transparent); color: var(--text); font-weight: 700; font-size: 10px; }
+table.grid.planilha td.sa-cell.sa-on { font-weight: 700; font-size: 10px; } /* cor: .p-trab */
 
 /* Pincel de sobreaviso com horas */
 .legend-sep { width: 1px; height: 22px; background: var(--border); margin: 0 6px; }

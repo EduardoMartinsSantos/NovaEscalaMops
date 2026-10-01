@@ -364,13 +364,6 @@ function colaboradoresVisiveis() {
 
 // ----- Exportar Excel: mesma visualização da tela (grupos, filtros, cores, 12x36 e sobreaviso) -----
 
-// Mistura a cor com branco: pct = quanto da cor original fica (0 a 1).
-function misturarComBranco(hex, pct) {
-  const n = parseInt(hex.replace('#', ''), 16);
-  const canal = (v) => Math.round(v * pct + 255 * (1 - pct)).toString(16).padStart(2, '0');
-  return `#${canal((n >> 16) & 255)}${canal((n >> 8) & 255)}${canal(n & 255)}`;
-}
-
 // Mesmas cores da grade da escala (tema claro).
 const XL = {
   cabecalho: { bold: true, color: '#FFFFFF', bg: '#1F3B64', wrap: true },
@@ -485,7 +478,7 @@ function exportarExcel() {
       `Sobreaviso ${t.codigo} (${habilitados.length}${totalTorre ? ` · ${fmtHoras(totalTorre)}` : ''})` +
       (descobertos ? ` — ${descobertos} dia(s) sem ninguém` : '');
     linhaGrupo(titulo, dias.map((d) => ({ v: '', e: cobertos.has(d) ? XL.grupo : XL.semSobreaviso })));
-    const corSA = { bold: true, size: 9, bg: misturarComBranco(t.cor, 0.3) };
+    const corSA = { ...XL.trabalho, bold: true, size: 9 }; // mesma cor do Trabalho
     for (const c of habilitados) {
       linhas.push({
         celulas: [
@@ -824,7 +817,7 @@ function renderGrade() {
               : aus
                 ? 'Ausente (férias/atestado)'
                 : '';
-          const cls = marca ? `p-${marca.cls}` : s ? 'sa-on' : '';
+          const cls = marca ? `p-${marca.cls}` : s ? 'sa-on p-trab' : ''; // sobreaviso com a cor do Trabalho
           return `<td class="sa-cell ${clsDia(d)} ${cls} ${aus && !s ? 'sa-aus' : ''}" style="--c:${esc(
             t.cor
           )}" data-t="${t.id}" data-c="${c.id}" data-d="${d}" title="${esc(titulo)}">${conteudo}</td>`;
