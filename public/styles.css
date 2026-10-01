@@ -436,3 +436,10 @@ th.th-filtro { white-space: nowrap; }
 .filtro-tudo { border-bottom: 1px solid var(--border); padding-bottom: 5px; margin-bottom: 2px; font-weight: 600; }
 .filtro-vazio { padding: 10px; text-align: center; }
 .filtro-acoes { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+
+/* Ordem manual das linhas da escala (arrastar e soltar) */
+.arrastar { cursor: grab; color: var(--muted); margin-right: 6px; font-size: 12px; user-select: none; }
+.arrastar:hover { color: var(--primary); }
+table.grid tr.arrastando td { opacity: .45; }
+table.grid tr.drop-acima td { box-shadow: inset 0 2px 0 var(--primary); }
+table.grid tr.drop-abaixo td { box-shadow: inset 0 -2px 0 var(--primary); }

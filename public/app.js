@@ -288,6 +288,7 @@ function viewEscala() {
     <div class="toolbar">
       <input id="f-busca" type="search" placeholder="Buscar colaborador…" value="${esc(f.busca)}">
       <button class="ghost" id="limpar-filtros-escala" title="Remover os filtros das colunas" hidden>✕ Limpar filtros</button>
+      <button class="ghost" id="ordem-padrao" title="Voltar as linhas para a ordem automática (torre/turno e nome)" hidden>↺ Ordem padrão</button>
       <div class="segmented" id="agrupar" role="group" aria-label="Agrupar por">
         <span>Agrupar por</span>
         <button data-g="torre" class="${state.agrupar === 'torre' ? 'active' : ''}">Torre</button>
@@ -304,6 +305,17 @@ function viewEscala() {
   $('#mes-ant').onclick = () => trocarMes(somarMes(state.mes, -1));
   $('#mes-prox').onclick = () => trocarMes(somarMes(state.mes, 1));
   $('#mes-hoje').onclick = () => trocarMes(mesAtual());
+  $('#ordem-padrao').onclick = async () => {
+    if (!confirm('Voltar todas as linhas da escala para a ordem automática? A ordem definida arrastando será perdida.')) return;
+    try {
+      await api('DELETE', '/escala/ordem');
+      state.colaboradores.forEach((c) => (c.ordem_escala = null));
+      renderGrade();
+      toast('Ordem padrão restaurada.');
+    } catch (err) {
+      toast(err.message, true);
+    }
+  };
   $('#limpar-filtros-escala').onclick = () => {
     state.filtrosEscala = {};
     renderGrade();
@@ -510,13 +522,15 @@ function exportarExcel() {
 
 const SEMANA_ABREV = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
-function nomePlanilha(c, { escala, horario } = {}) {
+function nomePlanilha(c, { escala, horario, arrastavel } = {}) {
   const torre = porId(state.torres, c.torre_id);
   const turno = porId(state.turnos, c.turno_id);
   const mesa = porId(state.mesas, c.mesa_id);
   const contrato = porId(state.contratos, c.contrato_id);
   return `<div class="pl">
-    <span class="n" title="${esc(c.nome)}">${esc(c.nome)}</span>
+    <span class="n" title="${esc(c.nome)}">${
+      arrastavel ? '<span class="arrastar" draggable="true" title="Arraste para mudar a ordem dentro do grupo">⠿</span>' : ''
+    }${esc(c.nome)}</span>
     <span>${esc(torre?.codigo || '')}</span>
     <span>${esc(turno?.codigo || '')}</span>
     <span>${esc(mesa?.codigo || '')}</span>
@@ -585,6 +599,16 @@ function iniciais(nome) {
 // Por turno: um grupo por turno, exceto os 12x36, que ficam juntos num grupo por torre (12x36 N1, 12x36 N2…).
 // Grupos na ordem do padrão (5x2, 6x1, 12x36…) e do horário; colaboradores pela torre (N1, N2…) e nome.
 // Nos grupos 12x36, os colaboradores vêm primeiro pelo turno (TPA, TPB…).
+// Ordem manual (arrastar e soltar) vem primeiro; quem não tem ordem manual vai depois, na ordem automática.
+const comOrdemManual = (automatica) => (a, b) => {
+  const oa = a.ordem_escala ?? null;
+  const ob = b.ordem_escala ?? null;
+  if (oa !== null && ob !== null && oa !== ob) return oa - ob;
+  if (oa !== null && ob === null) return -1;
+  if (oa === null && ob !== null) return 1;
+  return automatica(a, b);
+};
+
 const eh12x36 = (c) => porId(state.turnos, c.turno_id)?.padrao === '12x36';
 
 // Tabela 12x36: um grupo por torre (12x36 N1, 12x36 N2…), na ordem das torres; dentro, por turno (TPA, TPB…) e nome.
@@ -595,7 +619,7 @@ function grupos12x36(colabs) {
     .map((torre) => {
       const membros = colabs
         .filter((c) => c.torre_id === torre.id)
-        .sort((a, b) => codigoTurno(a).localeCompare(codigoTurno(b), 'pt-BR', { numeric: true }) || a.nome.localeCompare(b.nome));
+        .sort(comOrdemManual((a, b) => codigoTurno(a).localeCompare(codigoTurno(b), 'pt-BR', { numeric: true }) || a.nome.localeCompare(b.nome)));
       const turnosDoGrupo = state.turnos.filter((t) => membros.some((c) => c.turno_id === t.id)).sort(porCodigo);
       return {
         titulo: `12X36 ${torre.codigo} — ${turnosDoGrupo.map((t) => t.codigo).join(' · ')}`,
@@ -619,17 +643,17 @@ function gruposDaGrade(colabs) {
       ...turnos.map((t) => ({
         titulo: `Fim de semana: ${t.codigo} — ${t.nome} (${t.inicio} às ${t.fim})`,
         cabecalho: `<strong>FDS</strong> ${tagTurno(t)} ${esc(t.nome)} <span class="muted">${t.inicio} às ${t.fim}</span>`,
-        grupo: colabs.filter((c) => !naoParticipaFds(c) && c.turno_fds_id === t.id).sort(porTorre),
+        grupo: colabs.filter((c) => !naoParticipaFds(c) && c.turno_fds_id === t.id).sort(comOrdemManual(porTorre)),
       })),
       {
         titulo: 'Não participa do fim de semana',
         cabecalho: '<strong>FDS</strong> <span class="muted">Não participa</span>',
-        grupo: colabs.filter(naoParticipaFds).sort(porTorre),
+        grupo: colabs.filter(naoParticipaFds).sort(comOrdemManual(porTorre)),
       },
       {
         titulo: 'Sem turno de fim de semana',
         cabecalho: '<strong>FDS</strong> <span class="muted">Sem turno de fim de semana (usa o turno normal)</span>',
-        grupo: colabs.filter((c) => !naoParticipaFds(c) && !c.turno_fds_id).sort(porTorre),
+        grupo: colabs.filter((c) => !naoParticipaFds(c) && !c.turno_fds_id).sort(comOrdemManual(porTorre)),
       },
     ].filter((g) => g.grupo.length);
   }
@@ -647,7 +671,7 @@ function gruposDaGrade(colabs) {
       .map((t) => ({
         titulo: `${t.codigo} — ${t.nome} (${t.inicio} às ${t.fim})`,
         cabecalho: `${tagTurno(t)} ${esc(t.nome)} <span class="muted">${t.inicio} às ${t.fim}</span>`,
-        grupo: colabs.filter((c) => c.turno_id === t.id).sort(porTorre),
+        grupo: colabs.filter((c) => c.turno_id === t.id).sort(comOrdemManual(porTorre)),
       }));
     return grupos.filter((g) => g.grupo.length);
   }
@@ -669,7 +693,7 @@ function gruposDaGrade(colabs) {
     .map((t) => ({
       titulo: `Torre ${t.codigo} — ${t.nome}`,
       cabecalho: `${tagTorre(t)} ${esc(t.nome)}`,
-      grupo: colabs.filter((c) => c.torre_id === t.id).sort(porTurno),
+      grupo: colabs.filter((c) => c.torre_id === t.id).sort(comOrdemManual(porTurno)),
     }))
     .filter((g) => g.grupo.length);
 }
@@ -726,13 +750,14 @@ function renderGrade() {
     .map((d) => `<th class="${clsDia(d)}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
   // Uma tabela de escala (cabeçalho, grupos e a linha "Em serviço" dos seus colaboradores).
-  const tabelaEscala = (grupos, membros, vazio) => {
+  const tabelaEscala = (chave, grupos, membros, vazio) => {
+    const arrastavel = podeEditarEscala();
     let t = `<table class="grid planilha"><thead><tr><th class="name">${cabNome}</th>${cabDias}</tr></thead><tbody>`;
     if (vazio) t += `<tr><td class="name muted">${vazio}</td><td colspan="${dias.length}"></td></tr>`;
-    for (const { cabecalho, grupo } of grupos) {
+    for (const [gi, { cabecalho, grupo }] of grupos.entries()) {
       t += `<tr class="group"><td class="name">${cabecalho} <span class="muted">(${grupo.length})</span></td><td colspan="${dias.length}"></td></tr>`;
       for (const c of grupo) {
-        t += `<tr><td class="name">${nomePlanilha(c)}</td>`;
+        t += `<tr data-colab="${c.id}" data-grupo="${chave}-${gi}"><td class="name">${nomePlanilha(c, { arrastavel })}</td>`;
         for (const d of dias) {
           const x = cel.get(`${c.id}|${d}`);
           t += `<td class="cell ${clsDia(d)} ${classePlanilha(x)}" data-c="${c.id}" data-d="${d}" title="${esc(tituloCelula(x))}">${textoPlanilha(x, c)}</td>`;
@@ -753,9 +778,9 @@ function renderGrade() {
   // Escala principal e, abaixo, o 12x36 em tabela própria.
   const principais = colabs.filter((c) => !eh12x36(c));
   const revezamento = colabs.filter(eh12x36);
-  let html = tabelaEscala(gruposDaGrade(principais), principais, colabs.length ? '' : 'Nenhum colaborador.');
+  let html = tabelaEscala('p', gruposDaGrade(principais), principais, colabs.length ? '' : 'Nenhum colaborador.');
   if (revezamento.length) {
-    html += `<div class="tabela-titulo">12x36</div>${tabelaEscala(grupos12x36(revezamento), revezamento)}`;
+    html += `<div class="tabela-titulo">12x36</div>${tabelaEscala('12', grupos12x36(revezamento), revezamento)}`;
   }
 
   // Sobreaviso: tabela própria abaixo da escala, com o mesmo cabeçalho de dias (as colunas ficam alinhadas).
@@ -799,6 +824,8 @@ function renderGrade() {
   wrap.classList.toggle('recolhido', state.detalhesRecolhidos);
   const limpar = $('#limpar-filtros-escala');
   if (limpar) limpar.hidden = !Object.keys(state.filtrosEscala).length;
+  const ordemPadrao = $('#ordem-padrao');
+  if (ordemPadrao) ordemPadrao.hidden = !podeEditarEscala() || !state.colaboradores.some((c) => c.ordem_escala != null);
   wrap.classList.toggle('somente-leitura', !podeEditarEscala());
 }
 
@@ -1093,6 +1120,22 @@ function pintar(td) {
   } else if (state.pincel === '') aplicarSobreaviso(...args, { remover: true });
 }
 
+// Grava a nova ordem de um grupo (ids na ordem desejada). Atualiza a tela na hora; em caso de erro, recarrega.
+async function salvarOrdemEscala(ids) {
+  ids.forEach((id, i) => {
+    const c = porId(state.colaboradores, id);
+    if (c) c.ordem_escala = i + 1;
+  });
+  renderGrade();
+  try {
+    await api('PUT', '/escala/ordem', { ids });
+  } catch (err) {
+    toast(err.message, true);
+    await carregarBase();
+    renderGrade();
+  }
+}
+
 function ligarEventosGrade() {
   const wrap = $('#grid');
   const alvo = (e) => e.target.closest('td.cell, td.sa-cell');
@@ -1121,6 +1164,50 @@ function ligarEventosGrade() {
     else if (celulaPrevia) limparPrevia();
   });
   wrap.addEventListener('mouseleave', limparPrevia);
+
+  // Arrastar pela alça ⠿ muda a ordem da linha dentro do próprio grupo (só admins).
+  let arrasto = null;
+  const limparMarcas = () =>
+    wrap.querySelectorAll('.drop-acima, .drop-abaixo, .arrastando').forEach((tr) => tr.classList.remove('drop-acima', 'drop-abaixo', 'arrastando'));
+  wrap.addEventListener('dragstart', (e) => {
+    const alca = e.target.closest?.('.arrastar');
+    if (!alca || !podeEditarEscala()) return;
+    const tr = alca.closest('tr');
+    arrasto = { id: Number(tr.dataset.colab), grupo: tr.dataset.grupo };
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(arrasto.id));
+    tr.classList.add('arrastando');
+  });
+  const linhaAlvo = (e) => {
+    const tr = e.target.closest?.('tr[data-grupo]');
+    return arrasto && tr && tr.dataset.grupo === arrasto.grupo && Number(tr.dataset.colab) !== arrasto.id ? tr : null;
+  };
+  wrap.addEventListener('dragover', (e) => {
+    const tr = linhaAlvo(e);
+    if (!tr) return;
+    e.preventDefault();
+    const r = tr.getBoundingClientRect();
+    const acima = e.clientY < r.top + r.height / 2;
+    wrap.querySelectorAll('.drop-acima, .drop-abaixo').forEach((x) => x !== tr && x.classList.remove('drop-acima', 'drop-abaixo'));
+    tr.classList.toggle('drop-acima', acima);
+    tr.classList.toggle('drop-abaixo', !acima);
+  });
+  wrap.addEventListener('drop', (e) => {
+    const tr = linhaAlvo(e);
+    if (!tr) return;
+    e.preventDefault();
+    const acima = tr.classList.contains('drop-acima');
+    const ids = [...wrap.querySelectorAll(`tr[data-grupo="${arrasto.grupo}"]`)].map((x) => Number(x.dataset.colab)).filter((id) => id !== arrasto.id);
+    const pos = ids.indexOf(Number(tr.dataset.colab)) + (acima ? 0 : 1);
+    ids.splice(pos, 0, arrasto.id);
+    arrasto = null;
+    limparMarcas();
+    salvarOrdemEscala(ids);
+  });
+  wrap.addEventListener('dragend', () => {
+    arrasto = null;
+    limparMarcas();
+  });
 
   wrap.addEventListener('click', (e) => {
     const bf = e.target.closest('[data-filtro]');
