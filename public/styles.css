@@ -329,7 +329,10 @@ table.grid td.sa-cell.previa-folga::after {
 .serie-dia input { width: 100%; text-align: center; padding: 6px 4px; }
 .serie-dia input:placeholder-shown { background: var(--surface-2); }
 .serie-dia input.invalido { border-color: var(--danger); color: var(--danger); }
-.legend .serie-resumo { padding: 3px 8px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Série variável: pincel + ⚙ colados num só botão */
+.legend .grupo-pincel { display: inline-flex; }
+.legend .grupo-pincel > button[data-pincel] { border-top-right-radius: 0; border-bottom-right-radius: 0; font-variant-numeric: tabular-nums; }
+.legend .grupo-pincel > .serie-cfg { padding: 3px 8px; font-size: 12px; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 
 /* Login e usuário logado */
 .sidebar { display: flex; flex-direction: column; }

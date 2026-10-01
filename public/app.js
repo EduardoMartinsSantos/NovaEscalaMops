@@ -854,7 +854,7 @@ function renderLegenda() {
       .join('\n') || 'Nenhuma torre com série fixa (Cadastros → Torres)';
   // "Trabalho" aplica o turno cadastrado de cada colaborador; atestado fica no clique da célula.
   // "Folga" e "Limpar" também valem nas linhas de sobreaviso (folga = sem sobreaviso no dia).
-  // "Sobreaviso" usa a série configurável (⚙): com 1 dia é pontual e pinta arrastando; com mais, prévia + clique.
+  // "Série variável" (☎) usa a série configurável (⚙): com 1 dia é pontual e pinta arrastando; com mais, prévia + clique.
   // "Série" aplica a série fixa da torre (N3/ESPEC, N2…) a partir do dia clicado, com prévia ao passar o mouse.
   el.innerHTML =
     `<span class="label">Pincel:</span>` +
@@ -864,8 +864,13 @@ function renderLegenda() {
     quadrado('', 'q-limpar', 'Limpar', 'Limpar — apaga o lançamento do dia') +
     (state.torres.some((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
       ? `<span class="legend-sep"></span>` +
-        item('SA', '<span class="chip sa-chip">☎</span>', 'Sobreaviso', `Série configurável: ${descreverSerie(state.serieSA)}`) +
-        `<button class="serie-resumo" id="cfg-serie-sa" title="Configurar a série do pincel Sobreaviso">${esc(resumoSA)} ⚙</button>` +
+        // Série variável: o pincel e a configuração (⚙) num só botão dividido.
+        `<span class="grupo-pincel">${item(
+          'SA',
+          '<span class="chip sa-chip">☎</span>',
+          `Série variável · ${resumoSA}`,
+          `Série variável: ${descreverSerie(state.serieSA)}`
+        )}<button class="serie-cfg" id="cfg-serie-sa" title="Configurar a série variável" aria-label="Configurar a série variável">⚙</button></span>` +
         item('SERIE', '<span class="chip sa-chip">⇶</span>', 'Série fixa', fixas)
       : '') +
     (state.pincel !== null ? `<span class="label" style="margin-left:8px">Pincel ativo — Esc para sair</span>` : '');
