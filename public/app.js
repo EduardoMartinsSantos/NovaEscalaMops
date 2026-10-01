@@ -110,7 +110,7 @@ const state = {
 };
 
 const porId = (lista, id) => lista.find((x) => x.id === id);
-// Mínimo de pessoas em serviço num sábado/domingo; abaixo disso a linha "Em serviço" fica vermelha.
+// Mínimo de pessoas em serviço num sábado/domingo; abaixo disso a linha "Em serviço" mostra "!!!".
 const MINIMO_FDS = 2;
 
 async function carregarBase() {
@@ -378,7 +378,6 @@ const XL = {
   fimDeSemana: { bg: '#F3F4F8' },
   semSobreaviso: { bg: '#F4C7C7' },
   ausente: { bg: '#E5E7EB' },
-  poucosFds: { bg: '#F4C7C7', color: '#9C0006' },
   total: { bold: true, color: '#2563EB' },
 };
 
@@ -452,7 +451,7 @@ function exportarExcel() {
         ...dias.map((d) => {
           const n = membros.filter((c) => cel.get(`${c.id}|${d}`)?.tipo === 'TURNO').length;
           const fds = fimDeSemana(d);
-          return { v: n, e: { bold: true, ...(fds ? XL.fimDeSemana : {}), ...(fds && n < MINIMO_FDS ? XL.poucosFds : {}) } };
+          return { v: fds && n < MINIMO_FDS ? `${n} !!!` : n, e: { bold: true, ...(fds ? XL.fimDeSemana : {}) } };
         }),
       ],
     });
@@ -771,9 +770,9 @@ function renderGrade() {
       .map((d) => {
         const n = membros.filter((c) => cel.get(`${c.id}|${d}`)?.tipo === 'TURNO').length;
         const poucos = ehFimDeSemana(d) && n < MINIMO_FDS;
-        return `<td class="${clsDia(d)} ${poucos ? 'poucos-fds' : ''}" ${
-          poucos ? `title="Menos de ${MINIMO_FDS} em serviço no fim de semana"` : ''
-        }>${n || (poucos ? '0' : '<span class="muted">0</span>')}</td>`;
+        return `<td class="${clsDia(d)}" ${poucos ? `title="Menos de ${MINIMO_FDS} em serviço no fim de semana"` : ''}>${
+          poucos ? `${n}<span class="alerta-fds">!!!</span>` : n || '<span class="muted">0</span>'
+        }</td>`;
       })
       .join('')}</tr></tfoot></table>`;
     return t;
