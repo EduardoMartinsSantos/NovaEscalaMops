@@ -464,11 +464,13 @@ function exportarExcel() {
   const principais = colabs.filter((c) => !eh12x36(c));
   const revezamento = colabs.filter(eh12x36);
   cabecalho('ESCALA');
-  blocoEscala(gruposDaGrade(principais), principais);
+  const gruposPrincipais = gruposDaGrade(principais);
+  blocoEscala(gruposPrincipais, gruposPrincipais.flatMap((g) => g.grupo));
   if (revezamento.length) {
     tituloBloco('12X36');
     cabecalho('ESCALA');
-    blocoEscala(grupos12x36(revezamento), revezamento);
+    const grupos12 = grupos12x36(revezamento);
+    blocoEscala(grupos12, grupos12.flatMap((g) => g.grupo));
   }
 
   // Sobreaviso: bloco próprio abaixo da escala, com título e cabeçalho (como na tela).
@@ -632,6 +634,7 @@ function grupos12x36(colabs) {
 
 function gruposDaGrade(colabs) {
   // Fim de semana: um grupo por turno de fim de semana (na ordem dos turnos) e, por último, quem não tem.
+  // Quem não participa dos fins de semana fica de fora desta visão.
   if (state.agrupar === 'fds') {
     const ordemTorre = new Map(state.torres.map((t, i) => [t.id, i]));
     const porTorre = (a, b) =>
@@ -645,11 +648,6 @@ function gruposDaGrade(colabs) {
         cabecalho: `<strong>FDS</strong> ${tagTurno(t)} ${esc(t.nome)} <span class="muted">${t.inicio} às ${t.fim}</span>`,
         grupo: colabs.filter((c) => !naoParticipaFds(c) && c.turno_fds_id === t.id).sort(comOrdemManual(porTorre)),
       })),
-      {
-        titulo: 'Não participa do fim de semana',
-        cabecalho: '<strong>FDS</strong> <span class="muted">Não participa</span>',
-        grupo: colabs.filter(naoParticipaFds).sort(comOrdemManual(porTorre)),
-      },
       {
         titulo: 'Sem turno de fim de semana',
         cabecalho: '<strong>FDS</strong> <span class="muted">Sem turno de fim de semana (usa o turno normal)</span>',
@@ -778,9 +776,12 @@ function renderGrade() {
   // Escala principal e, abaixo, o 12x36 em tabela própria.
   const principais = colabs.filter((c) => !eh12x36(c));
   const revezamento = colabs.filter(eh12x36);
-  let html = tabelaEscala('p', gruposDaGrade(principais), principais, colabs.length ? '' : 'Nenhum colaborador.');
+  // "Em serviço" conta só quem aparece em cada tabela (ex.: a visão Fim de semana oculta quem não participa).
+  const exibidos = (grupos) => grupos.flatMap((g) => g.grupo);
+  const gruposPrincipais = gruposDaGrade(principais);
+  let html = tabelaEscala('p', gruposPrincipais, exibidos(gruposPrincipais), colabs.length ? '' : 'Nenhum colaborador.');
   if (revezamento.length) {
-    html += `<div class="tabela-titulo">12x36</div>${tabelaEscala('12', grupos12x36(revezamento), revezamento)}`;
+    html += `<div class="tabela-titulo">12x36</div>${tabelaEscala('12', grupos12x36(revezamento), exibidos(grupos12x36(revezamento)))}`;
   }
 
   // Sobreaviso: tabela própria abaixo da escala, com o mesmo cabeçalho de dias (as colunas ficam alinhadas).
