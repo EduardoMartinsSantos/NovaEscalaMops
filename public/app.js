@@ -1121,12 +1121,46 @@ function pintar(td) {
 }
 
 // Grava a nova ordem de um grupo (ids na ordem desejada). Atualiza a tela na hora; em caso de erro, recarrega.
-async function salvarOrdemEscala(ids) {
+const semAnimacao = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+// Posição vertical de cada linha da escala (por colaborador), para animar a troca de lugar.
+function posicoesLinhas() {
+  const pos = new Map();
+  document.querySelectorAll('#grid tr[data-colab]').forEach((tr) => pos.set(tr.dataset.colab + '|' + tr.dataset.grupo, tr.getBoundingClientRect().top));
+  return pos;
+}
+
+// As linhas deslizam da posição antiga para a nova; a linha movida pisca em destaque.
+function animarLinhas(antes, movido) {
+  const linhas = [...document.querySelectorAll('#grid tr[data-colab]')];
+  const destaque = linhas.find((tr) => Number(tr.dataset.colab) === movido);
+  if (destaque) {
+    destaque.classList.add('recem-movida');
+    setTimeout(() => destaque.classList.remove('recem-movida'), 1200);
+  }
+  if (semAnimacao()) return;
+  for (const tr of linhas) {
+    const de = antes.get(tr.dataset.colab + '|' + tr.dataset.grupo);
+    const delta = de === undefined ? 0 : de - tr.getBoundingClientRect().top;
+    if (!delta) continue;
+    tr.style.transition = 'none';
+    tr.style.transform = `translateY(${delta}px)`;
+    requestAnimationFrame(() => {
+      tr.style.transition = 'transform .28s cubic-bezier(.2, .8, .2, 1)';
+      tr.style.transform = '';
+    });
+    tr.addEventListener('transitionend', () => (tr.style.transition = ''), { once: true });
+  }
+}
+
+async function salvarOrdemEscala(ids, movido) {
+  const antes = posicoesLinhas();
   ids.forEach((id, i) => {
     const c = porId(state.colaboradores, id);
     if (c) c.ordem_escala = i + 1;
   });
   renderGrade();
+  animarLinhas(antes, movido);
   try {
     await api('PUT', '/escala/ordem', { ids });
   } catch (err) {
@@ -1167,8 +1201,12 @@ function ligarEventosGrade() {
 
   // Arrastar pela alça ⠿ muda a ordem da linha dentro do próprio grupo (só admins).
   let arrasto = null;
-  const limparMarcas = () =>
-    wrap.querySelectorAll('.drop-acima, .drop-abaixo, .arrastando').forEach((tr) => tr.classList.remove('drop-acima', 'drop-abaixo', 'arrastando'));
+  const limparMarcas = () => {
+    wrap.classList.remove('em-arrasto');
+    wrap
+      .querySelectorAll('.drop-acima, .drop-abaixo, .arrastando, .mesmo-grupo')
+      .forEach((tr) => tr.classList.remove('drop-acima', 'drop-abaixo', 'arrastando', 'mesmo-grupo'));
+  };
   wrap.addEventListener('dragstart', (e) => {
     const alca = e.target.closest?.('.arrastar');
     if (!alca || !podeEditarEscala()) return;
@@ -1176,7 +1214,19 @@ function ligarEventosGrade() {
     arrasto = { id: Number(tr.dataset.colab), grupo: tr.dataset.grupo };
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(arrasto.id));
-    tr.classList.add('arrastando');
+    // Imagem do arraste: um cartão com o nome, em vez da linha inteira da tabela.
+    const cartao = document.createElement('div');
+    cartao.className = 'cartao-arrasto';
+    cartao.textContent = `⠿ ${porId(state.colaboradores, arrasto.id)?.nome || ''}`;
+    document.body.append(cartao);
+    e.dataTransfer.setDragImage?.(cartao, 16, 16);
+    setTimeout(() => cartao.remove(), 0);
+    // Destaca a linha arrastada e o grupo onde ela pode cair; o resto da tabela fica apagado.
+    requestAnimationFrame(() => {
+      tr.classList.add('arrastando');
+      wrap.classList.add('em-arrasto');
+      wrap.querySelectorAll(`tr[data-grupo="${arrasto.grupo}"]`).forEach((x) => x.classList.add('mesmo-grupo'));
+    });
   });
   const linhaAlvo = (e) => {
     const tr = e.target.closest?.('tr[data-grupo]');
@@ -1200,9 +1250,10 @@ function ligarEventosGrade() {
     const ids = [...wrap.querySelectorAll(`tr[data-grupo="${arrasto.grupo}"]`)].map((x) => Number(x.dataset.colab)).filter((id) => id !== arrasto.id);
     const pos = ids.indexOf(Number(tr.dataset.colab)) + (acima ? 0 : 1);
     ids.splice(pos, 0, arrasto.id);
+    const movido = arrasto.id;
     arrasto = null;
     limparMarcas();
-    salvarOrdemEscala(ids);
+    salvarOrdemEscala(ids, movido);
   });
   wrap.addEventListener('dragend', () => {
     arrasto = null;
