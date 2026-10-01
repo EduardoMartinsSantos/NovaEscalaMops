@@ -414,7 +414,7 @@ function exportarExcel() {
     ];
   };
   const celulaDia = (x, d, c) => {
-    if (!x) return vazioDoDia(d);
+    if (!x) return { v: '', e: XL.folga }; // sem lançamento = folga
     if (x.tipo === 'TURNO') return { v: textoPlanilha(x, c), e: XL.trabalho };
     if (x.tipo === 'FOLGA') return { v: '', e: XL.folga };
     return { v: AUSENCIAS[x.tipo].nome.toUpperCase(), e: x.tipo === 'FERIAS' ? XL.ferias : XL.atestado };
@@ -538,8 +538,9 @@ function nomePlanilha(c, { escala, horario, arrastavel } = {}) {
   </div>`;
 }
 
+// Dia sem lançamento na escala é exibido como folga (o banco não guarda nada para ele).
 function classePlanilha(cel) {
-  if (!cel) return '';
+  if (!cel) return 'p-folga';
   return { TURNO: 'p-trab', FOLGA: 'p-folga', FERIAS: 'p-ferias', ATESTADO: 'p-atestado' }[cel.tipo];
 }
 
@@ -580,7 +581,7 @@ function textoPlanilha(cel, c) {
 }
 
 function tituloCelula(cel) {
-  if (!cel) return '';
+  if (!cel) return 'Folga';
   if (cel.tipo === 'TURNO') {
     const t = porId(state.turnos, cel.turno_id);
     return t ? `${t.codigo} · ${horarioDoTurno(t)}` : '';
