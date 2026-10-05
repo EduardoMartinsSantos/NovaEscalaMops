@@ -1520,12 +1520,30 @@ function renderDashboard(escala, fds) {
   const porTorreNome = (x, y) =>
     (ordemTorre.get(x.torre_id) ?? 999) - (ordemTorre.get(y.torre_id) ?? 999) || x.nome.localeCompare(y.nome, 'pt-BR');
   const pessoa = (c, detalhe) =>
-    `<li><span class="nome" title="${esc(c.nome)}">${esc(c.nome)}</span>${tagTorre(porId(state.torres, c.torre_id))}${
+    `<li><span class="nome" title="${esc(c.nome)}">${esc(c.nome)}</span>${
       detalhe ? `<span class="muted det">${esc(detalhe)}</span>` : ''
     }</li>`;
+  // Cada lista é subdividida por torre (na ordem do cadastro); quem não tem torre vai por último.
+  const porTorreDaLista = (membros) => {
+    const blocos = state.torres
+      .map((t) => ({ rotulo: tagTorre(t), membros: membros.filter((c) => c.torre_id === t.id) }))
+      .filter((b) => b.membros.length);
+    const sem = membros.filter((c) => !porId(state.torres, c.torre_id));
+    if (sem.length) blocos.push({ rotulo: '<span class="muted">Sem torre</span>', membros: sem });
+    return blocos;
+  };
   const lista = (titulo, cor, membros, detalhe, vazio) =>
     `<h3 style="--c:${cor}"><i></i>${titulo} <span class="muted">(${membros.length})</span></h3>${
-      membros.length ? `<ul class="dash-pessoas">${membros.map((c) => pessoa(c, detalhe(c))).join('')}</ul>` : `<p class="muted vazio">${vazio}</p>`
+      membros.length
+        ? porTorreDaLista(membros)
+            .map(
+              (b) =>
+                `<div class="dash-subtorre">${b.rotulo} <span class="muted">(${b.membros.length})</span></div><ul class="dash-pessoas">${b.membros
+                  .map((c) => pessoa(c, detalhe(c)))
+                  .join('')}</ul>`
+            )
+            .join('')
+        : `<p class="muted vazio">${vazio}</p>`
     }`;
   const trabalhando = equipe.filter((c) => situacao(c) === 'TURNO').sort(porHorario);
   const folga = equipe.filter((c) => situacao(c) === 'FOLGA').sort(porTorreNome);
