@@ -1483,22 +1483,40 @@ function renderDashboard(escala) {
   const porTorre = grupos.map((g) => ({ rotulo: g.rotulo, valores: { geral: g.membros.length } }));
   const porSituacao = grupos.map((g) => ({ rotulo: g.rotulo, valores: contar(g.membros, situacao) }));
 
-  const totais = contar(equipe, situacao);
-  const sobreaviso = new Set(escala.sobreaviso.filter((s) => s.data === data && !s.tipo).map((s) => s.colaborador_id)).size;
   const [a, m, d] = data.split('-');
   const rotuloDia = `${SEMANA_ABREV[diaSemana(data)]} ${d}/${m}/${a}${data === hojeStr() ? ' (hoje)' : ''}`;
-  const kpi = (valor, rotulo, cor) =>
-    `<div class="card kpi" ${cor ? `style="--c:${cor}"` : ''}><div class="v">${valor}</div><div class="r">${cor ? '<i></i>' : ''}${rotulo}</div></div>`;
+
+  // Listas do dia: quem trabalha (pelo horário do turno lançado, depois nome) e quem está fora.
+  const ordemTorre = new Map(state.torres.map((t, i) => [t.id, i]));
+  const turnoDe = (c) => porId(state.turnos, cel.get(c.id)?.turno_id);
+  const porHorario = (x, y) =>
+    (turnoDe(x)?.inicio || '99').localeCompare(turnoDe(y)?.inicio || '99') || x.nome.localeCompare(y.nome, 'pt-BR');
+  const porTorreNome = (x, y) =>
+    (ordemTorre.get(x.torre_id) ?? 999) - (ordemTorre.get(y.torre_id) ?? 999) || x.nome.localeCompare(y.nome, 'pt-BR');
+  const pessoa = (c, detalhe) =>
+    `<li><span class="nome" title="${esc(c.nome)}">${esc(c.nome)}</span>${tagTorre(porId(state.torres, c.torre_id))}${
+      detalhe ? `<span class="muted det">${esc(detalhe)}</span>` : ''
+    }</li>`;
+  const lista = (titulo, cor, membros, detalhe, vazio) =>
+    `<h3 style="--c:${cor}"><i></i>${titulo} <span class="muted">(${membros.length})</span></h3>${
+      membros.length ? `<ul class="dash-pessoas">${membros.map((c) => pessoa(c, detalhe(c))).join('')}</ul>` : `<p class="muted vazio">${vazio}</p>`
+    }`;
+  const trabalhando = equipe.filter((c) => situacao(c) === 'TURNO').sort(porHorario);
+  const folga = equipe.filter((c) => situacao(c) === 'FOLGA').sort(porTorreNome);
+  const ausentes = equipe.filter((c) => ['FERIAS', 'ATESTADO'].includes(situacao(c))).sort(porTorreNome);
 
   $('#dash').innerHTML = `
-    <div class="dash-kpis">
-      ${kpi(equipe.length, 'Colaboradores na escala')}
-      ${SITUACOES.map((s) => kpi(totais[s.id] || 0, `${s.nome} · ${rotuloDia}`, s.cor)).join('')}
-      ${kpi(sobreaviso, `De sobreaviso · ${rotuloDia}`, '#7c3aed')}
-    </div>
-    <div class="dash-graficos">
-      ${graficoBarras({ titulo: 'Equipe por torre', subtitulo: 'Colaboradores ativos na escala', linhas: porTorre, series: GERAL })}
-      ${graficoBarras({ titulo: 'Situação por torre', subtitulo: rotuloDia, linhas: porSituacao, series: SITUACOES })}
+    <div class="dash-layout">
+      <section class="card dash-dia-lista">
+        <h2>${esc(rotuloDia)}</h2>
+        ${lista('Trabalhando', '#3fa35b', trabalhando, (c) => horarioDoTurno(turnoDe(c)), 'Ninguém em serviço.')}
+        ${lista('Folga', '#d9534f', folga, () => '', 'Ninguém de folga.')}
+        ${ausentes.length ? lista('Férias / Atestado', '#4a8fd6', ausentes, (c) => AUSENCIAS[situacao(c)].nome, '') : ''}
+      </section>
+      <div class="dash-graficos">
+        ${graficoBarras({ titulo: 'Equipe por torre', subtitulo: 'Colaboradores ativos na escala', linhas: porTorre, series: GERAL })}
+        ${graficoBarras({ titulo: 'Situação por torre', subtitulo: rotuloDia, linhas: porSituacao, series: SITUACOES })}
+      </div>
     </div>`;
 }
 
