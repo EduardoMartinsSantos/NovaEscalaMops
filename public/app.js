@@ -2523,7 +2523,7 @@ function viewSobreaviso(alvo = main) {
   const habilitados = (t) => state.colaboradores.filter((c) => c.ativo && c.sobreaviso_torre_id === t.id).length;
   alvo.innerHTML = `
     <div class="bloco-head">
-      <div><h2>Sobreaviso</h2><p class="muted">Horário e visibilidade do sobreaviso de cada torre. Oculto, ele some da escala e do Excel, sem apagar os lançamentos.</p></div>
+      <div><h2>Sobreaviso</h2><p class="muted">Horário, série fixa e visibilidade do sobreaviso de cada torre. Oculto, ele some da escala e do Excel, sem apagar os lançamentos.</p></div>
     </div>
     <div class="card list-wrap" data-lista>${
       torresSA.length
@@ -2536,7 +2536,9 @@ function viewSobreaviso(alvo = main) {
                 <td class="nowrap">${
                   t.sobreaviso_inicio ? esc(horarioSobreaviso(t)) : '<span class="muted">não definido</span>'
                 } <button class="ghost icon" data-horario="${t.id}" title="Editar o horário do sobreaviso ${esc(t.codigo)}">✎</button></td>
-                <td>${t.padrao_sobreaviso ? esc(descreverSerie(t.padrao_sobreaviso)) : '<span class="muted">—</span>'}</td>
+                <td>${t.padrao_sobreaviso ? esc(descreverSerie(t.padrao_sobreaviso)) : '<span class="muted">—</span>'} <button class="ghost icon" data-serie-fixa="${
+                  t.id
+                }" title="Editar a série fixa do sobreaviso ${esc(t.codigo)}">✎</button></td>
                 <td>${habilitados(t)}</td>
                 <td><label class="interruptor" title="Mostrar ou ocultar o sobreaviso ${esc(t.codigo)} na escala">
                   <input type="checkbox" data-sa-visivel="${t.id}" ${t.sobreaviso_visivel ? 'checked' : ''}><span></span>${
@@ -2552,6 +2554,8 @@ function viewSobreaviso(alvo = main) {
   listaEl.onclick = (e) => {
     const b = e.target.closest('[data-horario]');
     if (b) dialogHorarioSobreaviso(porId(state.torres, Number(b.dataset.horario)));
+    const s = e.target.closest('[data-serie-fixa]');
+    if (s) dialogSerieFixa(porId(state.torres, Number(s.dataset.serieFixa)));
   };
   listaEl.onchange = async (e) => {
     const inp = e.target.closest('[data-sa-visivel]');
@@ -2583,6 +2587,22 @@ function dialogHorarioSobreaviso(t) {
       await carregarBase();
       atualizarCadastros();
       toast(`Horário do sobreaviso ${t.codigo} salvo.`);
+    },
+  });
+}
+
+// Série fixa do sobreaviso da torre (a do pincel "Série fixa"), editada direto no bloco Sobreaviso.
+function dialogSerieFixa(t) {
+  abrirDialog({
+    titulo: `Série fixa do sobreaviso ${t.codigo}`,
+    corpo: `${editorSerieHtml(t.padrao_sobreaviso)}
+      <p class="hint">Aplicada pelo pincel "Série fixa" a partir do dia clicado. Deixe 0 dias para a torre ficar sem série fixa.</p>`,
+    aoAbrir: ligarEditorSerie,
+    async onSubmit(form) {
+      await api('PUT', `/torres/${t.id}`, { ...t, padrao_sobreaviso: valor(form, 'padrao_sobreaviso') });
+      await carregarBase();
+      atualizarCadastros();
+      toast(`Série fixa do sobreaviso ${t.codigo} salva.`);
     },
   });
 }
