@@ -1517,6 +1517,14 @@ function renderDashboard(escala) {
       <div class="dash-graficos">
         ${graficoBarras({ titulo: 'Equipe por torre', subtitulo: 'Colaboradores ativos na escala', linhas: porTorre, series: GERAL, legenda: false })}
         ${graficoBarras({ titulo: 'Situação por torre', subtitulo: rotuloDia, linhas: porSituacao, series: SITUACOES })}
+        <div class="dash-torres">${grupos
+          .map(
+            (g) =>
+              `<div class="card torre-card" style="--c:${esc(g.cor)}"><div class="tt">${g.rotulo}</div><div class="v">${
+                g.membros.length
+              }</div><div class="muted r">colaboradores</div></div>`
+          )
+          .join('')}</div>
       </div>
     </div>`;
 }
