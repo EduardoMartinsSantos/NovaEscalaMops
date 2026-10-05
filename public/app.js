@@ -1434,7 +1434,8 @@ async function carregarDashboard() {
 }
 
 // Gráfico de barras horizontais empilhadas. linhas: [{ rotulo, valores: { serieId: n } }].
-function graficoBarras({ titulo, subtitulo, linhas, series }) {
+// Cada linha pode ter a própria cor (l.cor), ex.: a cor da torre; legenda: false esconde a legenda.
+function graficoBarras({ titulo, subtitulo, linhas, series, legenda }) {
   const total = (l) => series.reduce((n, s) => n + (l.valores[s.id] || 0), 0);
   const max = Math.max(1, ...linhas.map(total));
   const usadas = series.filter((s) => linhas.some((l) => l.valores[s.id]));
@@ -1444,7 +1445,7 @@ function graficoBarras({ titulo, subtitulo, linhas, series }) {
         .filter((s) => l.valores[s.id])
         .map((s) => {
           const n = l.valores[s.id];
-          return `<span class="barra-seg" style="--c:${esc(s.cor)}; width:${(n / max) * 100}%" title="${esc(s.nome)}: ${n}">${
+          return `<span class="barra-seg" style="--c:${esc(l.cor || s.cor)}; width:${(n / max) * 100}%" title="${esc(s.nome)}: ${n}">${
             n / max >= 0.07 ? n : ''
           }</span>`;
         })
@@ -1455,7 +1456,7 @@ function graficoBarras({ titulo, subtitulo, linhas, series }) {
   return `<section class="card grafico">
       <h2>${esc(titulo)}</h2>${subtitulo ? `<p class="muted">${esc(subtitulo)}</p>` : ''}
       ${linhas.length ? barras : '<div class="empty">Sem colaboradores na escala.</div>'}
-      <div class="legenda-graf">${usadas.map((s) => `<span><i style="--c:${esc(s.cor)}"></i>${esc(s.nome)}</span>`).join('')}</div>
+      ${legenda === false ? '' : `<div class="legenda-graf">${usadas.map((s) => `<span><i style="--c:${esc(s.cor)}"></i>${esc(s.nome)}</span>`).join('')}</div>`}
     </section>`;
 }
 
@@ -1467,10 +1468,10 @@ function renderDashboard(escala) {
 
   // Torres na ordem do cadastro; quem não tem torre vai num grupo à parte.
   const grupos = state.torres
-    .map((t) => ({ rotulo: tagTorre(t), membros: equipe.filter((c) => c.torre_id === t.id) }))
+    .map((t) => ({ rotulo: tagTorre(t), cor: t.cor, membros: equipe.filter((c) => c.torre_id === t.id) }))
     .filter((g) => g.membros.length);
   const semTorre = equipe.filter((c) => !porId(state.torres, c.torre_id));
-  if (semTorre.length) grupos.push({ rotulo: '<span class="muted">Sem torre</span>', membros: semTorre });
+  if (semTorre.length) grupos.push({ rotulo: '<span class="muted">Sem torre</span>', cor: '#9ca3af', membros: semTorre });
 
   const contar = (membros, chave) =>
     membros.reduce((acc, c) => {
@@ -1480,7 +1481,7 @@ function renderDashboard(escala) {
     }, {});
   // Equipe por torre: total geral de cada torre (sem divisão por turno).
   const GERAL = [{ id: 'geral', nome: 'Colaboradores', cor: '#2563eb' }];
-  const porTorre = grupos.map((g) => ({ rotulo: g.rotulo, valores: { geral: g.membros.length } }));
+  const porTorre = grupos.map((g) => ({ rotulo: g.rotulo, cor: g.cor, valores: { geral: g.membros.length } }));
   const porSituacao = grupos.map((g) => ({ rotulo: g.rotulo, valores: contar(g.membros, situacao) }));
 
   const [a, m, d] = data.split('-');
@@ -1514,7 +1515,7 @@ function renderDashboard(escala) {
         ${ausentes.length ? lista('Férias / Atestado', '#4a8fd6', ausentes, (c) => AUSENCIAS[situacao(c)].nome, '') : ''}
       </section>
       <div class="dash-graficos">
-        ${graficoBarras({ titulo: 'Equipe por torre', subtitulo: 'Colaboradores ativos na escala', linhas: porTorre, series: GERAL })}
+        ${graficoBarras({ titulo: 'Equipe por torre', subtitulo: 'Colaboradores ativos na escala', linhas: porTorre, series: GERAL, legenda: false })}
         ${graficoBarras({ titulo: 'Situação por torre', subtitulo: rotuloDia, linhas: porSituacao, series: SITUACOES })}
       </div>
     </div>`;
