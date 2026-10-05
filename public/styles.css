@@ -543,10 +543,9 @@ table.grid tfoot .alerta-fds { margin-left: 2px; font-weight: 800; letter-spacin
 .torre-card .v { font-size: 30px; font-weight: 700; line-height: 1.1; margin-top: 8px; font-variant-numeric: tabular-nums; }
 .torre-card .r { font-size: 12px; }
 
-/* Dashboard: card "Próximo final de semana" (por torre, sábado e domingo) */
-.dash-fds { margin-top: 16px; }
-.fds-torres { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; margin-top: 12px; }
-.fds-torre { background: var(--surface-2); border: 1px solid var(--border); border-top: 4px solid var(--c); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
-.fds-dias { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
-.fds-dia { min-width: 0; }
-.fds-dia h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; }
+/* Dashboard: card "Escala para esse final de semana" (lista por torre + sobreaviso) */
+.dash-fds h4 { margin: 14px 0 4px; }
+.dash-fds .fds-secao { margin: 20px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; text-transform: uppercase; letter-spacing: .4px; }
+.fds-lista { margin: 0; padding-left: 20px; font-size: 13px; }
+.fds-lista li { padding: 2px 0; }
+.dash-fds .vazio { margin: 10px 0 0; font-size: 13px; }

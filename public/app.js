@@ -1438,8 +1438,10 @@ async function carregarDashboard() {
     // O fim de semana pode cair em outro mês: busca todos os meses envolvidos.
     const meses = [...new Set([data, ...fds].map((x) => x.slice(0, 7)))];
     const [escala, ...outros] = await Promise.all(meses.map((m) => api('GET', `/escala?mes=${m}`)));
-    const celulasFds = [escala, ...outros].flatMap((e) => e.celulas).filter((x) => fds.includes(x.data));
-    if (data === state.dashData && $('#dash')) renderDashboard(escala, { dias: fds, celulas: celulasFds });
+    const todos = [escala, ...outros];
+    const celulasFds = todos.flatMap((e) => e.celulas).filter((x) => fds.includes(x.data));
+    const sobreavisoFds = todos.flatMap((e) => e.sobreaviso).filter((x) => fds.includes(x.data));
+    if (data === state.dashData && $('#dash')) renderDashboard(escala, { dias: fds, celulas: celulasFds, sobreaviso: sobreavisoFds });
   } catch (e) {
     toast(e.message, true);
   }
@@ -1555,42 +1557,53 @@ function renderDashboard(escala, fds) {
               }</div><div class="muted r">colaboradores</div></div>`
           )
           .join('')}</div></section>
+        ${cardFimDeSemana(fds, grupos)}
       </div>
-    </div>
-    ${cardFimDeSemana(fds, grupos)}`;
+    </div>`;
 }
 
-// Card "Próximo final de semana": por torre, quem trabalha no sábado e no domingo (com o horário do turno lançado).
-function cardFimDeSemana({ dias, celulas }, grupos) {
-  const cel = new Map(celulas.map((x) => [`${x.colaborador_id}|${x.data}`, x]));
+// Card "Escala para esse final de semana": por torre, quem trabalha no sábado ou no domingo ("T1 - NOME"),
+// e abaixo, por torre de sobreaviso, quem está de sobreaviso no fim de semana ("N2 - NOME").
+function cardFimDeSemana({ dias, celulas, sobreaviso }, grupos) {
   const rotulo = (d) => `${SEMANA_ABREV[diaSemana(d)]} ${d.slice(8)}/${d.slice(5, 7)}`;
-  const turnoNoDia = (c, d) => porId(state.turnos, cel.get(`${c.id}|${d}`)?.turno_id);
-  const coluna = (membros, d) => {
-    const lista = membros
-      .filter((c) => cel.get(`${c.id}|${d}`)?.tipo === 'TURNO')
-      .sort((a, b) => (turnoNoDia(a, d)?.inicio || '').localeCompare(turnoNoDia(b, d)?.inicio || '') || a.nome.localeCompare(b.nome, 'pt-BR'));
-    return `<div class="fds-dia"><h4>${rotulo(d)} <span class="muted">(${lista.length})</span></h4>${
-      lista.length
-        ? `<ul class="dash-pessoas">${lista
-            .map(
-              (c) =>
-                `<li><span class="nome" title="${esc(c.nome)}">${esc(c.nome)}</span><span class="muted det">${esc(
-                  horarioDoTurno(turnoNoDia(c, d))
-                )}</span></li>`
-            )
-            .join('')}</ul>`
-        : '<p class="muted vazio">Ninguém escalado.</p>'
-    }</div>`;
-  };
+  const item = (prefixo, nome) => `<li><strong>${esc(prefixo)}</strong> - ${esc(nome.toUpperCase())}</li>`;
+  const bloco = (titulo, itens) => `<h4>${titulo}</h4><ul class="fds-lista">${itens.join('')}</ul>`;
+
+  // Escala: turnos do fim de semana de cada pessoa (se mudar entre sábado e domingo, "T1/T2").
+  const turnosDe = new Map();
+  for (const x of celulas) {
+    if (x.tipo !== 'TURNO') continue;
+    const t = porId(state.turnos, x.turno_id);
+    if (!turnosDe.has(x.colaborador_id)) turnosDe.set(x.colaborador_id, []);
+    if (t && !turnosDe.get(x.colaborador_id).includes(t)) turnosDe.get(x.colaborador_id).push(t);
+  }
+  const escalados = grupos
+    .map((g) => {
+      const membros = g.membros
+        .filter((c) => turnosDe.has(c.id))
+        .map((c) => ({ c, turnos: turnosDe.get(c.id).sort((a, b) => a.inicio.localeCompare(b.inicio)) }))
+        .sort((a, b) => (a.turnos[0]?.inicio || '').localeCompare(b.turnos[0]?.inicio || '') || a.c.nome.localeCompare(b.c.nome, 'pt-BR'));
+      return membros.length
+        ? bloco(g.rotulo, membros.map(({ c, turnos }) => item(turnos.map((t) => t.codigo).join('/') || '—', c.nome)))
+        : '';
+    })
+    .join('');
+
+  // Sobreaviso: só as torres visíveis na escala; dias marcados como folga/férias não contam.
+  const sa = state.torres
+    .filter((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
+    .map((t) => {
+      const ids = [...new Set(sobreaviso.filter((s) => s.torre_id === t.id && !s.tipo).map((s) => s.colaborador_id))];
+      const pessoas = ids.map((id) => porId(state.colaboradores, id)).filter(Boolean).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      return pessoas.length ? bloco(tagTorre(t), pessoas.map((c) => item(t.codigo, c.nome))) : '';
+    })
+    .join('');
+
   return `<section class="card grafico dash-fds">
-      <h2>Próximo final de semana</h2>
-      <p class="muted">${rotulo(dias[0])} e ${rotulo(dias[1])} · quem está escalado, por torre</p>
-      <div class="fds-torres">${grupos
-        .map(
-          (g) => `<div class="fds-torre" style="--c:${esc(g.cor)}"><div class="tt">${g.rotulo}</div>
-            <div class="fds-dias">${dias.map((d) => coluna(g.membros, d)).join('')}</div></div>`
-        )
-        .join('')}</div>
+      <h2>Escala para esse final de semana</h2>
+      <p class="muted">${rotulo(dias[0])} e ${rotulo(dias[1])}</p>
+      ${escalados || '<p class="muted vazio">Ninguém escalado.</p>'}
+      ${sa ? `<h3 class="fds-secao">Sobreaviso</h3>${sa}` : ''}
     </section>`;
 }
 
