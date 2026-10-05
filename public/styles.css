@@ -494,6 +494,8 @@ table.grid tbody td.hoje { box-shadow: inset 2px 0 0 var(--hoje-destaque), inset
 .grafico h2 { margin: 0; font-size: 16px; }
 .grafico > p { margin: 2px 0 10px; font-size: 12px; }
 .barra-linha { display: grid; grid-template-columns: 84px minmax(0, 1fr) 36px; align-items: center; gap: 10px; margin: 10px 0; }
+.grafico.com-pct .barra-linha { grid-template-columns: 84px minmax(0, 1fr) 92px; }
+.barra-total .pct { font-weight: 500; font-size: 12px; }
 .barra-rotulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .barra-trilho { display: flex; height: 26px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
 .barra-seg {

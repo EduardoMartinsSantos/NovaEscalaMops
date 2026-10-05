@@ -1434,8 +1434,10 @@ async function carregarDashboard() {
 }
 
 // Gráfico de barras horizontais empilhadas. linhas: [{ rotulo, valores: { serieId: n } }].
-// Cada linha pode ter a própria cor (l.cor), ex.: a cor da torre; legenda: false esconde a legenda.
-function graficoBarras({ titulo, subtitulo, linhas, series, legenda }) {
+// Cada linha pode ter a própria cor (l.cor), ex.: a cor da torre; legenda: false esconde a legenda;
+// percentual: número total de referência para mostrar "n · x%" ao lado de cada barra.
+function graficoBarras({ titulo, subtitulo, linhas, series, legenda, percentual }) {
+  const pct = (n) => (percentual ? ` <span class="muted pct">${(Math.round((n / percentual) * 1000) / 10).toLocaleString('pt-BR')}%</span>` : '');
   const total = (l) => series.reduce((n, s) => n + (l.valores[s.id] || 0), 0);
   const max = Math.max(1, ...linhas.map(total));
   const usadas = series.filter((s) => linhas.some((l) => l.valores[s.id]));
@@ -1450,10 +1452,10 @@ function graficoBarras({ titulo, subtitulo, linhas, series, legenda }) {
           }</span>`;
         })
         .join('');
-      return `<div class="barra-linha"><div class="barra-rotulo">${l.rotulo}</div><div class="barra-trilho">${segs}</div><strong class="barra-total">${total(l)}</strong></div>`;
+      return `<div class="barra-linha"><div class="barra-rotulo">${l.rotulo}</div><div class="barra-trilho">${segs}</div><strong class="barra-total">${total(l)}${pct(total(l))}</strong></div>`;
     })
     .join('');
-  return `<section class="card grafico">
+  return `<section class="card grafico ${percentual ? 'com-pct' : ''}">
       <h2>${esc(titulo)}</h2>${subtitulo ? `<p class="muted">${esc(subtitulo)}</p>` : ''}
       ${linhas.length ? barras : '<div class="empty">Sem colaboradores na escala.</div>'}
       ${legenda === false ? '' : `<div class="legenda-graf">${usadas.map((s) => `<span><i style="--c:${esc(s.cor)}"></i>${esc(s.nome)}</span>`).join('')}</div>`}
@@ -1479,9 +1481,18 @@ function renderDashboard(escala) {
       acc[k] = (acc[k] || 0) + 1;
       return acc;
     }, {});
-  // Equipe por torre: total geral de cada torre (sem divisão por turno).
+  // Equipe por turno: total de cada turno (na ordem da escala) e o percentual sobre o total da equipe.
   const GERAL = [{ id: 'geral', nome: 'Colaboradores', cor: '#2563eb' }];
-  const porTorre = grupos.map((g) => ({ rotulo: g.rotulo, cor: g.cor, valores: { geral: g.membros.length } }));
+  const porCodigo = (x, y) => x.codigo.localeCompare(y.codigo, 'pt-BR', { numeric: true });
+  const porTurno = [...state.turnos]
+    .sort(
+      (x, y) =>
+        ORDEM_PADRAO.indexOf(x.padrao) - ORDEM_PADRAO.indexOf(y.padrao) ||
+        (x.padrao === '12x36' ? porCodigo(x, y) : x.inicio.localeCompare(y.inicio) || porCodigo(x, y))
+    )
+    .map((t) => ({ rotulo: tagTurno(t), cor: t.cor, valores: { geral: equipe.filter((c) => c.turno_id === t.id).length } }));
+  const semTurno = equipe.filter((c) => !porId(state.turnos, c.turno_id)).length;
+  if (semTurno) porTurno.push({ rotulo: '<span class="muted">Sem turno</span>', cor: '#9ca3af', valores: { geral: semTurno } });
   const porSituacao = grupos.map((g) => ({ rotulo: g.rotulo, valores: contar(g.membros, situacao) }));
 
   const [a, m, d] = data.split('-');
@@ -1515,7 +1526,14 @@ function renderDashboard(escala) {
         ${ausentes.length ? lista('Férias / Atestado', '#4a8fd6', ausentes, (c) => AUSENCIAS[situacao(c)].nome, '') : ''}
       </section>
       <div class="dash-graficos">
-        ${graficoBarras({ titulo: 'Equipe por torre', subtitulo: 'Colaboradores ativos na escala', linhas: porTorre, series: GERAL, legenda: false })}
+        ${graficoBarras({
+          titulo: 'Equipe por turno',
+          subtitulo: `Colaboradores ativos na escala · % sobre o total (${equipe.length})`,
+          linhas: porTurno.filter((l) => l.valores.geral),
+          series: GERAL,
+          legenda: false,
+          percentual: equipe.length,
+        })}
         ${graficoBarras({ titulo: 'Situação por torre', subtitulo: rotuloDia, linhas: porSituacao, series: SITUACOES })}
         <section class="card grafico"><h2>Colaboradores ativos</h2><p class="muted">Total na escala, por torre</p><div class="dash-torres">${grupos
           .map(
