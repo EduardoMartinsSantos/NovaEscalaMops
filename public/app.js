@@ -1862,7 +1862,8 @@ function renderAcoesTabela() {
   const el = $('#acoes-tabela');
   if (!el) return;
   if (!state.editando) {
-    el.innerHTML = `<button id="btn-editar">✎ Editar</button><button class="primary" id="novo">+ Novo colaborador</button>`;
+    el.innerHTML = `<button id="btn-exportar-colab" title="Baixa em Excel as linhas visíveis (com os filtros e a ordenação atuais)">⤓ Exportar Excel</button><button id="btn-editar">✎ Editar</button><button class="primary" id="novo">+ Novo colaborador</button>`;
+    $('#btn-exportar-colab').onclick = exportarColaboradores;
     $('#btn-editar').onclick = () => {
       state.editando = true;
       renderAcoesTabela();
@@ -1881,6 +1882,33 @@ function renderAcoesTabela() {
     sairDaEdicao();
   };
   $('#btn-salvar').onclick = salvarRascunho;
+}
+
+// Exporta para Excel os colaboradores visíveis na tabela (mesmos filtros e ordenação), com todas as colunas.
+function exportarColaboradores() {
+  const lista = colaboradoresFiltrados();
+  if (!lista.length) return toast('Nenhum colaborador para exportar.', true);
+  const chaves = Object.keys(COLUNAS_COLAB);
+  const larguras = { nome: 38, email: 40, telefone: 18 };
+  const blob = criarXlsx({
+    aba: 'Colaboradores',
+    colunas: chaves.map((k) => ({ largura: larguras[k] || 13 })),
+    linhas: [
+      { altura: 22, celulas: chaves.map((k) => ({ v: COLUNAS_COLAB[k].rotulo.toUpperCase(), e: { ...XL.cabecalho, align: k === 'nome' ? 'left' : 'center' } })) },
+      ...lista.map((c) => ({
+        celulas: chaves.map((k) => ({ v: COLUNAS_COLAB[k].valor(c), e: k === 'nome' ? { bold: true, align: 'left' } : { align: 'left' } })),
+      })),
+    ],
+    congelar: { linhas: 1, colunas: 1 },
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `colaboradores-${hojeStr()}.xlsx`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast(`${lista.length} colaborador(es) exportado(s).`);
 }
 
 function sairDaEdicao() {
