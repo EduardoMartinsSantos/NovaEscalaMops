@@ -1403,7 +1403,7 @@ function viewDashboard() {
   state.dashData = state.dashData || hojeStr();
   main.innerHTML = `
     <div class="page-head">
-      <div><h1>Dashboard</h1><p>Equipe por torre: composição por turno e situação no dia escolhido.</p></div>
+      <div><h1>Dashboard</h1><p>Equipe por torre: total geral e situação no dia escolhido.</p></div>
       <div class="head-actions">
         <label class="dash-dia">Dia <input type="date" id="dash-data" value="${state.dashData}"></label>
         <button id="dash-hoje">Hoje</button>
@@ -1472,27 +1472,15 @@ function renderDashboard(escala) {
   const semTorre = equipe.filter((c) => !porId(state.torres, c.torre_id));
   if (semTorre.length) grupos.push({ rotulo: '<span class="muted">Sem torre</span>', membros: semTorre });
 
-  // Turnos na mesma ordem da escala: padrão (5x2, 6x1, 12x36…), depois horário (12x36 por código).
-  const porCodigo = (a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true });
-  const turnos = [...state.turnos]
-    .sort(
-      (a, b) =>
-        ORDEM_PADRAO.indexOf(a.padrao) - ORDEM_PADRAO.indexOf(b.padrao) ||
-        (a.padrao === '12x36' ? porCodigo(a, b) : a.inicio.localeCompare(b.inicio) || porCodigo(a, b))
-    )
-    .map((t) => ({ id: String(t.id), nome: `${t.codigo} · ${t.inicio}–${t.fim}`, cor: t.cor }));
-  turnos.push({ id: 'sem', nome: 'Sem turno', cor: '#9ca3af' });
-
   const contar = (membros, chave) =>
     membros.reduce((acc, c) => {
       const k = chave(c);
       acc[k] = (acc[k] || 0) + 1;
       return acc;
     }, {});
-  const porTurno = grupos.map((g) => ({
-    rotulo: g.rotulo,
-    valores: contar(g.membros, (c) => (porId(state.turnos, c.turno_id) ? String(c.turno_id) : 'sem')),
-  }));
+  // Equipe por torre: total geral de cada torre (sem divisão por turno).
+  const GERAL = [{ id: 'geral', nome: 'Colaboradores', cor: '#2563eb' }];
+  const porTorre = grupos.map((g) => ({ rotulo: g.rotulo, valores: { geral: g.membros.length } }));
   const porSituacao = grupos.map((g) => ({ rotulo: g.rotulo, valores: contar(g.membros, situacao) }));
 
   const totais = contar(equipe, situacao);
@@ -1509,7 +1497,7 @@ function renderDashboard(escala) {
       ${kpi(sobreaviso, `De sobreaviso · ${rotuloDia}`, '#7c3aed')}
     </div>
     <div class="dash-graficos">
-      ${graficoBarras({ titulo: 'Equipe por torre', subtitulo: 'Colaboradores ativos na escala, por turno', linhas: porTurno, series: turnos })}
+      ${graficoBarras({ titulo: 'Equipe por torre', subtitulo: 'Colaboradores ativos na escala', linhas: porTorre, series: GERAL })}
       ${graficoBarras({ titulo: 'Situação por torre', subtitulo: rotuloDia, linhas: porSituacao, series: SITUACOES })}
     </div>`;
 }
