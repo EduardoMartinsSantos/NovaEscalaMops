@@ -550,3 +550,10 @@ table.grid tfoot .alerta-fds { margin-left: 2px; font-weight: 800; letter-spacin
 .fds-lista li { padding: 2px 0; }
 .dash-fds .vazio { margin: 10px 0 0; font-size: 13px; }
 .dash-subtorre { margin: 10px 0 2px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+/* Folga no topo do card do dia, numa subseção vermelha */
+.dash-sub-folga {
+  margin: 10px 0 4px; padding: 2px 12px 8px; border-radius: 8px;
+  background: color-mix(in srgb, #d9534f 12%, transparent); border: 1px solid color-mix(in srgb, #d9534f 45%, transparent);
+}
+.dash-sub-folga h3 { color: #d9534f; }
+.dash-sub-folga .dash-pessoas li { border-bottom-color: color-mix(in srgb, #d9534f 25%, transparent); }

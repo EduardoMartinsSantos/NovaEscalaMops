@@ -1553,8 +1553,8 @@ function renderDashboard(escala, fds) {
     <div class="dash-layout">
       <section class="card dash-dia-lista">
         <h2>${esc(rotuloDia)}</h2>
+        <div class="dash-sub-folga">${lista('Folga', '#d9534f', folga, () => '', 'Ninguém de folga.')}</div>
         ${lista('Trabalhando', '#3fa35b', trabalhando, (c) => horarioDoTurno(turnoDe(c)), 'Ninguém em serviço.')}
-        ${lista('Folga', '#d9534f', folga, () => '', 'Ninguém de folga.')}
         ${ausentes.length ? lista('Férias / Atestado', '#4a8fd6', ausentes, (c) => AUSENCIAS[situacao(c)].nome, '') : ''}
       </section>
       <div class="dash-graficos">
