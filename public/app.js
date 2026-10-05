@@ -2519,21 +2519,31 @@ const BLOCOS_CADASTRO = [
   ['sobreaviso', 'Sobreaviso', viewSobreaviso],
 ];
 
+// Cada bloco é uma lista alternada: clicar no título abre/fecha o conteúdo logo abaixo.
+// Os blocos abertos ficam guardados no navegador.
 function viewCadastros(foco) {
+  const abertos = new Set(lerPreferencia('cadastrosAbertos', '').split(',').filter(Boolean));
+  if (foco) abertos.add(foco);
   main.innerHTML = `
     <div class="page-head">
-      <div><h1>Cadastros</h1><p>Torres, turnos, mesas, contratos e sobreaviso num só lugar.</p></div>
+      <div><h1>Cadastros</h1><p>Torres, turnos, mesas, contratos e sobreaviso num só lugar. Clique num item para abrir ou fechar.</p></div>
     </div>
-    <nav class="atalhos">${BLOCOS_CADASTRO.map(([id, nome]) => `<a href="#${id}" data-bloco="${id}">${nome}</a>`).join('')}</nav>
-    ${BLOCOS_CADASTRO.map(([id]) => `<section class="bloco-cadastro" id="bloco-${id}"></section>`).join('')}`;
+    ${BLOCOS_CADASTRO.map(
+      ([id, nome]) =>
+        `<details class="bloco-cadastro" data-bloco="${id}" ${abertos.has(id) ? 'open' : ''}>
+          <summary>${esc(nome)}</summary>
+          <div class="bloco-corpo" id="bloco-${id}"></div>
+        </details>`
+    ).join('')}`;
   for (const [id, , desenhar] of BLOCOS_CADASTRO) desenhar($(`#bloco-${id}`));
-  $('.atalhos').onclick = (e) => {
-    const a = e.target.closest('[data-bloco]');
-    if (!a) return;
-    e.preventDefault();
-    $(`#bloco-${a.dataset.bloco}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-  if (foco) $(`#bloco-${foco}`)?.scrollIntoView({ block: 'start' });
+  main.querySelectorAll('details.bloco-cadastro').forEach((d) =>
+    d.addEventListener('toggle', () => {
+      if (d.open) abertos.add(d.dataset.bloco);
+      else abertos.delete(d.dataset.bloco);
+      salvarPreferencia('cadastrosAbertos', [...abertos].join(','));
+    })
+  );
+  if (foco) $(`#bloco-${foco}`)?.closest('details').scrollIntoView({ block: 'start' });
 }
 
 // Depois de salvar em qualquer bloco, redesenha todos (um afeta o outro, ex.: torre ↔ sobreaviso) sem perder a rolagem.

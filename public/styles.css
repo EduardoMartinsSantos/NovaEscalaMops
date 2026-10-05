@@ -385,14 +385,20 @@ td.nowrap { white-space: nowrap; }
 td.acesso > div { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .tag.contrato::before { content: "§"; font-size: 10px; }
 
-/* Tela Cadastros: blocos */
-.atalhos { display: flex; gap: 6px; flex-wrap: wrap; margin: -6px 0 22px; }
-.atalhos a {
-  padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
-  color: var(--text); text-decoration: none; font-size: 13px; font-weight: 500;
+/* Tela Cadastros: blocos em lista alternada (abre/fecha no título) */
+.bloco-cadastro { margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); scroll-margin-top: 16px; }
+.bloco-cadastro > summary {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer;
+  font-weight: 600; list-style: none; user-select: none; border-radius: var(--radius);
 }
-.atalhos a:hover { border-color: var(--primary); color: var(--primary); }
-.bloco-cadastro { margin-bottom: 36px; scroll-margin-top: 16px; }
+.bloco-cadastro > summary::-webkit-details-marker { display: none; }
+.bloco-cadastro > summary::before { content: "▸"; color: var(--muted); font-size: 12px; transition: transform .15s ease; }
+.bloco-cadastro[open] > summary::before { transform: rotate(90deg); }
+.bloco-cadastro > summary:hover { background: var(--surface-2); }
+.bloco-cadastro[open] > summary { border-bottom: 1px solid var(--border); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.bloco-corpo { padding: 12px 14px 14px; }
+.bloco-corpo .bloco-head h2 { display: none; } /* o título já está na linha que abre/fecha */
+.bloco-corpo .bloco-head p { margin: 0; }
 .bloco-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 10px; flex-wrap: wrap; }
 .bloco-head h2 { margin: 0; font-size: 18px; }
 .bloco-head p { margin: 2px 0 0; font-size: 13px; }
