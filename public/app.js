@@ -1423,11 +1423,23 @@ function viewDashboard() {
   carregarDashboard();
 }
 
+// Fim de semana do card "Próximo final de semana": o que está em andamento (se o dia for sábado/domingo)
+// ou o próximo sábado e domingo a partir do dia escolhido.
+function proximoFimDeSemana(data) {
+  const w = diaSemana(data);
+  const sab = w === 6 ? data : w === 0 ? somarDias(data, -1) : somarDias(data, 6 - w);
+  return [sab, somarDias(sab, 1)];
+}
+
 async function carregarDashboard() {
   const data = state.dashData;
   try {
-    const escala = await api('GET', `/escala?mes=${data.slice(0, 7)}`);
-    if (data === state.dashData && $('#dash')) renderDashboard(escala);
+    const fds = proximoFimDeSemana(data);
+    // O fim de semana pode cair em outro mês: busca todos os meses envolvidos.
+    const meses = [...new Set([data, ...fds].map((x) => x.slice(0, 7)))];
+    const [escala, ...outros] = await Promise.all(meses.map((m) => api('GET', `/escala?mes=${m}`)));
+    const celulasFds = [escala, ...outros].flatMap((e) => e.celulas).filter((x) => fds.includes(x.data));
+    if (data === state.dashData && $('#dash')) renderDashboard(escala, { dias: fds, celulas: celulasFds });
   } catch (e) {
     toast(e.message, true);
   }
@@ -1462,7 +1474,7 @@ function graficoBarras({ titulo, subtitulo, linhas, series, legenda, percentual 
     </section>`;
 }
 
-function renderDashboard(escala) {
+function renderDashboard(escala, fds) {
   const data = state.dashData;
   const equipe = state.colaboradores.filter((c) => c.ativo && c.na_escala);
   const cel = new Map(escala.celulas.filter((x) => x.data === data).map((x) => [x.colaborador_id, x]));
@@ -1544,7 +1556,42 @@ function renderDashboard(escala) {
           )
           .join('')}</div></section>
       </div>
-    </div>`;
+    </div>
+    ${cardFimDeSemana(fds, grupos)}`;
+}
+
+// Card "Próximo final de semana": por torre, quem trabalha no sábado e no domingo (com o horário do turno lançado).
+function cardFimDeSemana({ dias, celulas }, grupos) {
+  const cel = new Map(celulas.map((x) => [`${x.colaborador_id}|${x.data}`, x]));
+  const rotulo = (d) => `${SEMANA_ABREV[diaSemana(d)]} ${d.slice(8)}/${d.slice(5, 7)}`;
+  const turnoNoDia = (c, d) => porId(state.turnos, cel.get(`${c.id}|${d}`)?.turno_id);
+  const coluna = (membros, d) => {
+    const lista = membros
+      .filter((c) => cel.get(`${c.id}|${d}`)?.tipo === 'TURNO')
+      .sort((a, b) => (turnoNoDia(a, d)?.inicio || '').localeCompare(turnoNoDia(b, d)?.inicio || '') || a.nome.localeCompare(b.nome, 'pt-BR'));
+    return `<div class="fds-dia"><h4>${rotulo(d)} <span class="muted">(${lista.length})</span></h4>${
+      lista.length
+        ? `<ul class="dash-pessoas">${lista
+            .map(
+              (c) =>
+                `<li><span class="nome" title="${esc(c.nome)}">${esc(c.nome)}</span><span class="muted det">${esc(
+                  horarioDoTurno(turnoNoDia(c, d))
+                )}</span></li>`
+            )
+            .join('')}</ul>`
+        : '<p class="muted vazio">Ninguém escalado.</p>'
+    }</div>`;
+  };
+  return `<section class="card grafico dash-fds">
+      <h2>Próximo final de semana</h2>
+      <p class="muted">${rotulo(dias[0])} e ${rotulo(dias[1])} · quem está escalado, por torre</p>
+      <div class="fds-torres">${grupos
+        .map(
+          (g) => `<div class="fds-torre" style="--c:${esc(g.cor)}"><div class="tt">${g.rotulo}</div>
+            <div class="fds-dias">${dias.map((d) => coluna(g.membros, d)).join('')}</div></div>`
+        )
+        .join('')}</div>
+    </section>`;
 }
 
 // =====================================================================
