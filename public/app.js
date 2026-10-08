@@ -113,6 +113,8 @@ const state = {
 };
 
 const porId = (lista, id) => lista.find((x) => x.id === id);
+// Torres dos colaboradores; os sobreavisos avulsos (SRE, Produção…) ficam só no bloco Sobreaviso.
+const torresReais = () => state.torres.filter((t) => !t.so_sobreaviso);
 
 // Colunas de informação da escala (além do Nome, que é fixo) que podem ser escondidas pela engrenagem.
 // px = largura na tela; xl = largura no Excel.
@@ -1828,7 +1830,7 @@ function abrirFiltro(ancora, { titulo, valores, selecionados, ordem = 0, aoOrden
 // No modo edição as mudanças ficam em state.rascunho (id → campos alterados) até "Salvar alterações".
 
 const CAMPOS_SELECT = {
-  torre_id: () => state.torres,
+  torre_id: () => torresReais(),
   turno_id: () => state.turnos,
   turno_fds_id: () => state.turnos,
   sobreaviso_torre_id: () => state.torres,
@@ -1979,7 +1981,7 @@ function linhaColaborador(c, torresSA, travado) {
     ${celulaTexto(c, 'nome', 'w-nome', 'text', travado)}
     ${celulaTexto(c, 'email', 'w-email', 'email', travado)}
     ${celulaTexto(c, 'telefone', 'w-tel', 'tel', travado)}
-    ${celulaSelect(c, 'torre_id', state.torres, (t) => t.codigo, undefined, travado)}
+    ${celulaSelect(c, 'torre_id', torresReais(), (t) => t.codigo, undefined, travado)}
     ${celulaSelect(c, 'turno_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`, undefined, travado)}
     ${celulaFds(c, travado)}
     ${celulaSelect(c, 'mesa_id', state.mesas, (m) => m.codigo, '—', travado)}
@@ -2205,7 +2207,7 @@ function formLote() {
       <p class="hint">${esc(nomes.slice(0, 6).join(', '))}${nomes.length > 6 ? ` e mais ${nomes.length - 6}` : ''}.
         Só os campos alterados serão aplicados.</p>
       <div class="row">
-        <label class="field"><span>Torre</span>${sel('torre_id', state.torres, (t) => `${t.codigo} — ${t.nome}`)}</label>
+        <label class="field"><span>Torre</span>${sel('torre_id', torresReais(), (t) => `${t.codigo} — ${t.nome}`)}</label>
         <label class="field"><span>Turno</span>${sel('turno_id', state.turnos, (t) => `${t.codigo} — ${t.inicio} às ${t.fim}`)}</label>
         <label class="field"><span>Turno de fim de semana</span><select name="turno_fds_id">${manter}${opcoesFds(
           '__nenhum',
@@ -2267,7 +2269,7 @@ function formColaborador(c = null) {
       </div>
       <div class="row">
         <label class="field"><span>Torre *</span><select name="torre_id" required>${opcoes(
-          state.torres,
+          torresReais(),
           c?.torre_id,
           (t) => `${t.codigo} — ${t.nome}`,
           'Selecione…'
@@ -2336,7 +2338,7 @@ function formColaborador(c = null) {
 
 // Tela de cadastro genérica: lista + formulário em dialog.
 // Um bloco de cadastro (título, botão "+ Novo" e tabela) desenhado dentro de `alvo`.
-function telaCadastro({ titulo, subtitulo, recurso, novo, colunas, linha, form, corpo, emUso, ordenar, aoAbrir }, alvo = main) {
+function telaCadastro({ titulo, subtitulo, recurso, novo, colunas, linha, form, corpo, emUso, ordenar, filtrar, aoAbrir }, alvo = main) {
   alvo.innerHTML = `
     <div class="bloco-head">
       <div><h2>${esc(titulo)}</h2><p class="muted">${esc(subtitulo)}</p></div>
@@ -2345,7 +2347,10 @@ function telaCadastro({ titulo, subtitulo, recurso, novo, colunas, linha, form, 
     <div class="card list-wrap" data-lista></div>`;
   const listaEl = $('[data-lista]', alvo);
 
-  const lista = () => (ordenar ? [...state[recurso]].sort(ordenar) : state[recurso]);
+  const lista = () => {
+    const itens = filtrar ? state[recurso].filter(filtrar) : [...state[recurso]];
+    return ordenar ? itens.sort(ordenar) : itens;
+  };
   const render = () => {
     const el = listaEl;
     if (!lista().length) {
@@ -2412,6 +2417,7 @@ function viewTorres(alvo) {
     titulo: 'Torres',
     subtitulo: 'Times de atendimento. Marque as que possuem sobreaviso para habilitar a tag de sobreaviso.',
     recurso: 'torres',
+    filtrar: (t) => !t.so_sobreaviso,
     novo: 'Nova torre',
     colunas: ['Ordem', 'Tag', 'Nome', 'Sobreaviso', 'Colaboradores', 'Status'],
     linha: (t) => [
@@ -2429,7 +2435,7 @@ function viewTorres(alvo) {
     emUso: (t) => contar(t) + contarSA(t) > 0,
     aoAbrir: ligarEditorSerie,
     corpo: (t) => `${camposComuns(t, '#2563eb')}
-      <label class="field"><span>Ordem de exibição</span><input type="number" name="ordem" min="0" step="1" value="${esc(t?.ordem ?? state.torres.length + 1)}"></label>
+      <label class="field"><span>Ordem de exibição</span><input type="number" name="ordem" min="0" step="1" value="${esc(t?.ordem ?? torresReais().length + 1)}"></label>
       <label class="check"><input type="checkbox" name="permite_sobreaviso" ${t?.permite_sobreaviso ? 'checked' : ''}> Possui sobreaviso</label>
       <label class="check"><input type="checkbox" name="sobreaviso_visivel" ${!t || t.sobreaviso_visivel ? 'checked' : ''}> Mostrar o sobreaviso na escala</label>
       ${editorSerieHtml(t?.padrao_sobreaviso)}
@@ -2551,11 +2557,12 @@ function viewSobreaviso(alvo = main) {
   const habilitados = (t) => state.colaboradores.filter((c) => c.ativo && c.sobreaviso_torre_id === t.id).length;
   alvo.innerHTML = `
     <div class="bloco-head">
-      <div><h2>Sobreaviso</h2><p class="muted">Horário, série fixa e visibilidade do sobreaviso de cada torre. Oculto, ele some da escala e do Excel, sem apagar os lançamentos.</p></div>
+      <div><h2>Sobreaviso</h2><p class="muted">Horário, série fixa e visibilidade do sobreaviso de cada torre. Oculto, ele some da escala e do Excel, sem apagar os lançamentos. Cada sobreaviso novo ganha a própria seção na escala.</p></div>
+      <button class="primary" data-novo-sa>+ Novo sobreaviso</button>
     </div>
     <div class="card list-wrap" data-lista>${
       torresSA.length
-        ? `<table class="list"><thead><tr><th>Torre</th><th>Nome</th><th>Horário</th><th>Série fixa</th><th>Habilitados</th><th>Na escala</th></tr></thead>
+        ? `<table class="list"><thead><tr><th>Sobreaviso</th><th>Nome</th><th>Horário</th><th>Série fixa</th><th>Habilitados</th><th>Na escala</th><th></th></tr></thead>
           <tbody>${torresSA
             .map(
               (t) => `<tr class="${t.ativo ? '' : 'inativo'}">
@@ -2572,14 +2579,39 @@ function viewSobreaviso(alvo = main) {
                   <input type="checkbox" data-sa-visivel="${t.id}" ${t.sobreaviso_visivel ? 'checked' : ''}><span></span>${
                     t.sobreaviso_visivel ? 'Visível' : 'Oculto'
                   }</label></td>
+                <td class="actions nowrap">${
+                  t.so_sobreaviso
+                    ? `<button class="ghost" data-editar-sa="${t.id}">Editar</button><button class="ghost danger" data-excluir-sa="${t.id}">Excluir</button>`
+                    : '<span class="muted" title="Sobreaviso de uma torre: edite em Torres">torre</span>'
+                }</td>
               </tr>`
             )
             .join('')}</tbody></table>`
-        : '<div class="empty">Nenhuma torre com sobreaviso. Marque "Possui sobreaviso" no bloco Torres.</div>'
+        : '<div class="empty">Nenhum sobreaviso. Crie um em "+ Novo sobreaviso" ou marque "Possui sobreaviso" numa torre.</div>'
     }</div>`;
   const listaEl = $('[data-lista]', alvo);
 
-  listaEl.onclick = (e) => {
+  $('[data-novo-sa]', alvo).onclick = () => dialogNovoSobreaviso();
+  listaEl.onclick = async (e) => {
+    const ed = e.target.closest('[data-editar-sa]');
+    if (ed) return dialogNovoSobreaviso(porId(state.torres, Number(ed.dataset.editarSa)));
+    const ex = e.target.closest('[data-excluir-sa]');
+    if (ex) {
+      const t = porId(state.torres, Number(ex.dataset.excluirSa));
+      if (habilitados(t) || state.colaboradores.some((c) => c.sobreaviso_torre_id === t.id)) {
+        return toast(`${t.codigo} tem colaboradores habilitados. Tire o sobreaviso deles ou oculte em vez de excluir.`, true);
+      }
+      if (!confirm(`Excluir o sobreaviso ${t.codigo}? Os lançamentos dele na escala também serão apagados.`)) return;
+      try {
+        await api('DELETE', `/torres/${t.id}`);
+        await carregarBase();
+        toast(`Sobreaviso ${t.codigo} excluído.`);
+        atualizarCadastros();
+      } catch (err) {
+        toast(err.message, true);
+      }
+      return;
+    }
     const b = e.target.closest('[data-horario]');
     if (b) dialogHorarioSobreaviso(porId(state.torres, Number(b.dataset.horario)));
     const s = e.target.closest('[data-serie-fixa]');
@@ -2615,6 +2647,43 @@ function dialogHorarioSobreaviso(t) {
       await carregarBase();
       atualizarCadastros();
       toast(`Horário do sobreaviso ${t.codigo} salvo.`);
+    },
+  });
+}
+
+// Cria (ou edita) um sobreaviso avulso, que não é torre de colaborador: ganha uma seção própria na escala,
+// no mesmo padrão das torres com sobreaviso. Os colaboradores entram pela coluna Sobreaviso.
+function dialogNovoSobreaviso(t) {
+  abrirDialog({
+    titulo: t ? `Sobreaviso ${t.codigo}` : 'Novo sobreaviso',
+    corpo: `${camposComuns(t, '#7c3aed')}
+      <div class="row">
+        <label class="field"><span>Início</span><input type="time" name="inicio" value="${esc(t?.sobreaviso_inicio || '')}"></label>
+        <label class="field"><span>Fim</span><input type="time" name="fim" value="${esc(t?.sobreaviso_fim || '')}"></label>
+      </div>
+      ${editorSerieHtml(t?.padrao_sobreaviso)}
+      <label class="check"><input type="checkbox" name="sobreaviso_visivel" ${!t || t.sobreaviso_visivel ? 'checked' : ''}> Mostrar na escala</label>
+      <label class="check"><input type="checkbox" name="ativo" ${!t || t.ativo ? 'checked' : ''}> Ativo</label>
+      <p class="hint">Depois de criar, habilite os colaboradores na coluna Sobreaviso da tela Colaboradores.</p>`,
+    aoAbrir: ligarEditorSerie,
+    async onSubmit(form) {
+      const corpo = {
+        codigo: valor(form, 'codigo'),
+        nome: valor(form, 'nome'),
+        cor: valor(form, 'cor'),
+        sobreaviso_inicio: valor(form, 'inicio'),
+        sobreaviso_fim: valor(form, 'fim'),
+        padrao_sobreaviso: valor(form, 'padrao_sobreaviso'),
+        sobreaviso_visivel: marcado(form, 'sobreaviso_visivel'),
+        ativo: marcado(form, 'ativo'),
+        so_sobreaviso: true,
+        permite_sobreaviso: true,
+      };
+      if (t) await api('PUT', `/torres/${t.id}`, corpo);
+      else await api('POST', '/torres', { ...corpo, ordem: Math.max(0, ...state.torres.map((x) => x.ordem || 0)) + 1 });
+      await carregarBase();
+      atualizarCadastros();
+      toast(`Sobreaviso ${corpo.codigo.toUpperCase()} ${t ? 'salvo' : 'criado'}.`);
     },
   });
 }

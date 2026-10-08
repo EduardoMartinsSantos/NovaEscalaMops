@@ -25,7 +25,7 @@ const origem = ORIGEM_ARQUIVO ? null : new Pool({ connectionString: ORIGEM_URL, 
 const TABELAS = {
   torres: [
     'id', 'codigo', 'nome', 'cor', 'permite_sobreaviso', 'sobreaviso_visivel', 'ordem', 'padrao_sobreaviso',
-    'sobreaviso_inicio', 'sobreaviso_fim', 'ativo',
+    'sobreaviso_inicio', 'sobreaviso_fim', 'ativo', 'so_sobreaviso',
   ],
   turnos: ['id', 'codigo', 'nome', 'inicio', 'fim', 'cor', 'padrao', 'grupo', 'ativo'],
   mesas: ['id', 'codigo', 'nome', 'cor', 'ordem', 'ativo'],
