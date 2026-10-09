@@ -1498,10 +1498,10 @@ function renderDashboard(escala, fds) {
 
   // Torres na ordem do cadastro; quem não tem torre vai num grupo à parte.
   const grupos = state.torres
-    .map((t) => ({ rotulo: tagTorre(t), cor: t.cor, membros: equipe.filter((c) => c.torre_id === t.id) }))
+    .map((t) => ({ rotulo: tagTorre(t), codigo: t.codigo, cor: t.cor, membros: equipe.filter((c) => c.torre_id === t.id) }))
     .filter((g) => g.membros.length);
   const semTorre = equipe.filter((c) => !porId(state.torres, c.torre_id));
-  if (semTorre.length) grupos.push({ rotulo: '<span class="muted">Sem torre</span>', cor: '#9ca3af', membros: semTorre });
+  if (semTorre.length) grupos.push({ rotulo: '<span class="muted">Sem torre</span>', codigo: 'Sem torre', cor: '#9ca3af', membros: semTorre });
 
   const contar = (membros, chave) =>
     membros.reduce((acc, c) => {
@@ -1562,6 +1562,7 @@ function renderDashboard(escala, fds) {
   const trabalhando = equipe.filter((c) => situacao(c) === 'TURNO').sort(porHorario);
   const folga = equipe.filter((c) => situacao(c) === 'FOLGA').sort(porTorreNome);
   const ausentes = equipe.filter((c) => ['FERIAS', 'ATESTADO'].includes(situacao(c))).sort(porTorreNome);
+  const fdsCard = cardFimDeSemana(fds, grupos);
 
   $('#dash').innerHTML = `
     <div class="dash-layout">
@@ -1589,16 +1590,26 @@ function renderDashboard(escala, fds) {
               }</div><div class="muted r">colaboradores</div></div>`
           )
           .join('')}</div></section>
-        ${cardFimDeSemana(fds, grupos)}
+        ${fdsCard.html}
       </div>
     </div>`;
+  $('#copiar-fds').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(fdsCard.texto);
+      toast('Escala do fim de semana copiada.');
+    } catch {
+      toast('Não foi possível copiar. Copie manualmente.', true);
+    }
+  };
 }
 
 // Card "Escala para esse final de semana": por torre, quem trabalha no sábado ou no domingo ("T1 - NOME"),
 // e abaixo, por torre de sobreaviso, quem está de sobreaviso no fim de semana ("N2 - NOME").
+// Monta o card e, em paralelo, o mesmo conteúdo em texto puro (para o botão Copiar) — mesmos grupos e ordem.
 function cardFimDeSemana({ dias, celulas, sobreaviso }, grupos) {
   const rotulo = (d) => `${SEMANA_ABREV[diaSemana(d)]} ${d.slice(8)}/${d.slice(5, 7)}`;
   const item = (prefixo, nome) => `<li><strong>${esc(prefixo)}</strong> - ${esc(nome.toUpperCase())}</li>`;
+  const linhaTexto = (prefixo, nome) => `* ${prefixo} - ${nome.toUpperCase()}`;
   const bloco = (titulo, itens) => `<h4>${titulo}</h4><ul class="fds-lista">${itens.join('')}</ul>`;
 
   // Escala: turnos do fim de semana de cada pessoa (se mudar entre sábado e domingo, "T1/T2").
@@ -1609,34 +1620,57 @@ function cardFimDeSemana({ dias, celulas, sobreaviso }, grupos) {
     if (!turnosDe.has(x.colaborador_id)) turnosDe.set(x.colaborador_id, []);
     if (t && !turnosDe.get(x.colaborador_id).includes(t)) turnosDe.get(x.colaborador_id).push(t);
   }
-  const escalados = grupos
+  const gruposEscalados = grupos
     .map((g) => {
       const membros = g.membros
         .filter((c) => turnosDe.has(c.id))
         .map((c) => ({ c, turnos: turnosDe.get(c.id).sort((a, b) => a.inicio.localeCompare(b.inicio)) }))
         .sort((a, b) => (a.turnos[0]?.inicio || '').localeCompare(b.turnos[0]?.inicio || '') || a.c.nome.localeCompare(b.c.nome, 'pt-BR'));
-      return membros.length
-        ? bloco(g.rotulo, membros.map(({ c, turnos }) => item(turnos.map((t) => t.codigo).join('/') || '—', c.nome)))
-        : '';
+      return { g, membros };
     })
+    .filter((x) => x.membros.length);
+  const escalados = gruposEscalados
+    .map(({ g, membros }) => bloco(g.rotulo, membros.map(({ c, turnos }) => item(turnos.map((t) => t.codigo).join('/') || '—', c.nome))))
     .join('');
 
   // Sobreaviso: só as torres visíveis na escala; dias marcados como folga/férias não contam.
-  const sa = state.torres
+  const torresSA = state.torres
     .filter((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
     .map((t) => {
       const ids = [...new Set(sobreaviso.filter((s) => s.torre_id === t.id && !s.tipo).map((s) => s.colaborador_id))];
       const pessoas = ids.map((id) => porId(state.colaboradores, id)).filter(Boolean).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-      return pessoas.length ? bloco(tagTorre(t), pessoas.map((c) => item(t.codigo, c.nome))) : '';
+      return { t, pessoas };
     })
-    .join('');
+    .filter((x) => x.pessoas.length);
+  const sa = torresSA.map(({ t, pessoas }) => bloco(tagTorre(t), pessoas.map((c) => item(t.codigo, c.nome)))).join('');
 
-  return `<section class="card grafico dash-fds">
-      <h2>Escala para esse final de semana</h2>
+  const linhas = [
+    'Escala para esse final de semana',
+    `${rotulo(dias[0])} e ${rotulo(dias[1])}`,
+    '',
+    ...(gruposEscalados.length
+      ? gruposEscalados.flatMap(({ g, membros }) => [
+          g.codigo,
+          ...membros.map(({ c, turnos }) => linhaTexto(turnos.map((t) => t.codigo).join('/') || '—', c.nome)),
+          '',
+        ])
+      : ['Ninguém escalado.', '']),
+  ];
+  if (torresSA.length) {
+    linhas.push('SOBREAVISO', '');
+    for (const { t, pessoas } of torresSA) linhas.push(t.codigo, ...pessoas.map((c) => linhaTexto(t.codigo, c.nome)), '');
+  }
+  const texto = linhas.join('\n').trim();
+
+  return {
+    texto,
+    html: `<section class="card grafico dash-fds">
+      <div class="dash-fds-head"><h2>Escala para esse final de semana</h2><button class="ghost" id="copiar-fds" title="Copiar para compartilhar">⧉ Copiar</button></div>
       <p class="muted">${rotulo(dias[0])} e ${rotulo(dias[1])}</p>
       ${escalados || '<p class="muted vazio">Ninguém escalado.</p>'}
       ${sa ? `<h3 class="fds-secao">Sobreaviso</h3>${sa}` : ''}
-    </section>`;
+    </section>`,
+  };
 }
 
 // =====================================================================
