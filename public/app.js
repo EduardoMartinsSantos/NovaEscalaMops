@@ -1624,7 +1624,7 @@ function cardFimDeSemana({ dias, celulas, sobreaviso }, grupos) {
     const porDia = dias.map((d, i) => ({ d, turno: turnoNoDia[i](c.id) })).filter((x) => x.turno);
     if (!porDia.length) return [];
     if (porDia.some((x) => x.turno.padrao === '12x36')) {
-      return porDia.map(({ d, turno }) => ({ chave: d, texto: `${diaAbrev(d)} ${turno.codigo} · ${horarioDoTurno(turno)}` }));
+      return porDia.map(({ d, turno }) => ({ chave: d, texto: `${turno.codigo} · [${diaAbrev(d)} - ${horarioDoTurno(turno)}]` }));
     }
     const { d, turno } = porDia[0];
     return [{ chave: d, texto: `${turno.codigo} · ${horarioDoTurno(turno)}` }];
