@@ -2343,6 +2343,8 @@ function formColaborador(c = null) {
 // banco). O saldo de cada um é só a soma dos lançamentos; a cada 8h de crédito equivalem a 1 dia de folga.
 // Tela e API são só para admins (dados sensíveis).
 
+const HORAS_POR_DIA_BH = 8; // 1 dia de folga, para o botão "Agendar folga"
+
 async function carregarBancoHoras() {
   state.bancoHoras = await api('GET', '/banco-horas');
 }
@@ -2372,8 +2374,8 @@ const fmtHorasSinal = (h) => (h > 0 ? `+${fmtHoras(h)}` : fmtHoras(h));
 function equivalenteBH(total) {
   if (!total) return 'Sem lançamentos';
   const abs = Math.abs(total);
-  const dias = Math.floor(abs / 8);
-  const resto = Math.round((abs - dias * 8) * 2) / 2;
+  const dias = Math.floor(abs / HORAS_POR_DIA_BH);
+  const resto = Math.round((abs - dias * HORAS_POR_DIA_BH) * 2) / 2;
   const partes = [];
   if (dias) partes.push(`${dias} dia${dias > 1 ? 's' : ''}`);
   if (resto) partes.push(fmtHoras(resto));
@@ -2381,7 +2383,7 @@ function equivalenteBH(total) {
 }
 
 // Dias completos de folga a partir do saldo em horas (a cada 8h = 1 dia; a hora restante fica só no Saldo).
-const diasBH = (total) => Math.trunc(total / 8);
+const diasBH = (total) => Math.trunc(total / HORAS_POR_DIA_BH);
 
 function renderBancoHoras() {
   const el = $('#lista-bh');
@@ -2433,19 +2435,31 @@ function dialogBancoHoras(c) {
         <div class="bh-saldo-grande">Saldo: <strong class="${total > 0 ? 'pos' : total < 0 ? 'neg' : ''}">${fmtHoras(
           total
         )}</strong> <span class="muted">(${equivalenteBH(total)})</span></div>
-        <div class="bh-novo">
-          <label class="field bh-horas-campo"><span>Horas</span><input type="text" inputmode="decimal" data-bh-horas placeholder="8, -8 ou 160" autofocus></label>
-          <label class="field bh-obs-campo"><span>Observação</span><input type="text" maxlength="200" data-bh-obs placeholder="opcional"></label>
-          <button type="button" class="primary" data-bh-lancar>Lançar</button>
+        <div class="bh-sep">
+          <span class="bh-rotulo">Lançar horas</span>
+          <div class="bh-novo">
+            <label class="field bh-horas-campo"><span>Horas</span><input type="text" inputmode="decimal" data-bh-horas placeholder="8, -8 ou 160" autofocus></label>
+            <label class="field bh-obs-campo"><span>Observação</span><input type="text" maxlength="200" data-bh-obs placeholder="opcional"></label>
+            <button type="button" class="primary" data-bh-lancar>Lançar</button>
+          </div>
+          <p class="hint">Positivo = crédito (ex.: hora extra ou backlog); negativo = débito (ex.: folga tirada do banco). Sem limite de 24h por lançamento.</p>
         </div>
-        <p class="hint">Positivo = crédito (ex.: hora extra ou backlog); negativo = débito (ex.: folga tirada do banco). Sem limite de 24h por lançamento.</p>
+        <div class="bh-sep">
+          <span class="bh-rotulo">Agendar folga</span>
+          <div class="bh-novo">
+            <label class="field bh-horas-campo"><span>Dia</span><input type="date" data-bh-folga-data></label>
+            <label class="field bh-obs-campo"><span>Observação</span><input type="text" maxlength="200" data-bh-folga-obs placeholder="opcional"></label>
+            <button type="button" class="ghost" data-bh-agendar>Agendar folga</button>
+          </div>
+          <p class="hint">Desconta ${fmtHoras(HORAS_POR_DIA_BH)} (1 dia) do saldo na data escolhida.</p>
+        </div>
         <p class="form-error" data-bh-erro></p>
         ${
           lista.length
-            ? `<table class="list bh-historico"><thead><tr><th>Lançado em</th><th>Horas</th><th>Observação</th><th></th></tr></thead><tbody>${lista
+            ? `<table class="list bh-historico"><thead><tr><th>Data</th><th>Horas</th><th>Observação</th><th></th></tr></thead><tbody>${lista
                 .map(
                   (l) =>
-                    `<tr><td class="muted">${new Date(l.criado_em).toLocaleDateString('pt-BR')}</td><td class="${
+                    `<tr><td class="muted">${l.data.split('-').reverse().join('/')}</td><td class="${
                       l.horas < 0 ? 'neg' : 'pos'
                     }">${fmtHorasSinal(l.horas)}</td><td>${esc(l.observacao || '')}</td><td class="actions"><button type="button" class="ghost danger icon" data-bh-del="${
                       l.id
@@ -2468,6 +2482,27 @@ function dialogBancoHoras(c) {
         render();
         renderBancoHoras();
         toast('Lançamento adicionado.');
+      } catch (err) {
+        erroEl.textContent = err.message;
+      }
+    };
+    // Agendar folga: escolhe o dia e desconta 1 dia (8h) fixo do saldo — sem precisar digitar horas.
+    $('[data-bh-agendar]', dialogForm).onclick = async () => {
+      const data = dialogForm.querySelector('[data-bh-folga-data]').value;
+      const observacaoDigitada = dialogForm.querySelector('[data-bh-folga-obs]').value.trim();
+      const erroEl = dialogForm.querySelector('[data-bh-erro]');
+      erroEl.textContent = '';
+      if (!data) {
+        erroEl.textContent = 'Escolha o dia da folga.';
+        return;
+      }
+      const observacao = observacaoDigitada || `Folga agendada para ${data.split('-').reverse().join('/')}`;
+      try {
+        await api('POST', '/banco-horas', { colaborador_id: c.id, data, horas: -HORAS_POR_DIA_BH, observacao });
+        await carregarBancoHoras();
+        render();
+        renderBancoHoras();
+        toast('Folga agendada.');
       } catch (err) {
         erroEl.textContent = err.message;
       }

@@ -569,9 +569,13 @@ table.grid tfoot .alerta-fds { margin-left: 2px; font-weight: 800; letter-spacin
 dialog.larga { width: min(640px, calc(100vw - 32px)); }
 .bh-saldo-grande { font-size: 15px; }
 .bh-saldo-grande strong { font-variant-numeric: tabular-nums; }
+.bh-sep { padding-top: 12px; border-top: 1px solid var(--border); }
+.bh-sep:first-of-type { padding-top: 0; border-top: 0; }
+.bh-rotulo { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 8px; }
 .bh-novo { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .bh-novo .field { flex: 1 1 110px; min-width: 0; }
 .bh-novo .bh-obs-campo { flex: 2 1 160px; }
 .bh-novo button { flex: none; }
+.bh-sep .hint { margin: 8px 0 0; }
 .bh-historico { font-size: 13px; }
 .bh-historico td, .bh-historico th { padding: 7px 10px; }
