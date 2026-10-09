@@ -110,6 +110,8 @@ const state = {
   ordemColab: { campo: '', dir: 1 }, // ordenação da tabela de colaboradores (chave de COLUNAS_COLAB; '' = por nome)
   escala: null,
   pincel: null, // valor aplicado direto ao clicar/arrastar nas células
+  bancoHoras: null, // lançamentos do banco de horas (carregado ao abrir a tela)
+  filtroBH: { busca: '' },
 };
 
 const porId = (lista, id) => lista.find((x) => x.id === id);
@@ -169,6 +171,7 @@ const dialog = $('#dialog');
 const dialogForm = $('#dialog-form');
 
 function abrirDialog({ titulo, corpo, confirmar = 'Salvar', onSubmit, aoAbrir }) {
+  dialog.classList.remove('larga'); // só o diálogo do Banco de Horas usa a versão larga
   dialogForm.innerHTML = `
     <header><h2>${esc(titulo)}</h2></header>
     <div class="body">${corpo}<p class="form-error"></p></div>
@@ -247,6 +250,7 @@ const VIEWS = {
   dashboard: viewDashboard,
   escala: viewEscala,
   colaboradores: viewColaboradores,
+  'banco-horas': viewBancoHoras,
   cadastros: () => viewCadastros(),
   // Endereços antigos de cada cadastro: abrem a tela Cadastros já no bloco.
   torres: () => viewCadastros('torres'),
@@ -269,8 +273,8 @@ function rota() {
   }
   const nome = location.hash.slice(1);
   let view = VIEWS[nome] ? nome : 'escala';
-  // A tela de colaboradores é só para admins.
-  if (view === 'colaboradores' && !state.usuario.admin) {
+  // Colaboradores e Banco de Horas são só para admins.
+  if ((view === 'colaboradores' || view === 'banco-horas') && !state.usuario.admin) {
     view = 'escala';
     history.replaceState(null, '', '#escala');
   }
@@ -2333,6 +2337,156 @@ function formColaborador(c = null) {
 }
 
 // =====================================================================
+// BANCO DE HORAS
+// =====================================================================
+// Lançamentos avulsos por colaborador: horas > 0 = crédito (hora extra), horas < 0 = débito (folga tirada do
+// banco). O saldo de cada um é só a soma dos lançamentos; a cada 8h de crédito equivalem a 1 dia de folga.
+// Tela e API são só para admins (dados sensíveis).
+
+async function carregarBancoHoras() {
+  state.bancoHoras = await api('GET', '/banco-horas');
+}
+
+function viewBancoHoras() {
+  const f = state.filtroBH;
+  main.innerHTML = `
+    <div class="page-head">
+      <div><h1>Banco de Horas</h1><p>A cada 8h de crédito acumulado equivalem a 1 dia de folga. Clique num colaborador para lançar horas ou ver o histórico.</p></div>
+    </div>
+    <div class="toolbar">
+      <input id="busca-bh" type="search" placeholder="Buscar colaborador…" value="${esc(f.busca)}">
+    </div>
+    <div class="card list-wrap" id="lista-bh"><div class="empty">Carregando…</div></div>`;
+  $('#busca-bh').oninput = (e) => {
+    f.busca = e.target.value;
+    renderBancoHoras();
+  };
+  carregarBancoHoras().then(renderBancoHoras).catch((e) => toast(e.message, true));
+}
+
+const lancamentosDe = (colaboradorId) => (state.bancoHoras || []).filter((l) => l.colaborador_id === colaboradorId);
+const saldoBH = (colaboradorId) => lancamentosDe(colaboradorId).reduce((n, l) => n + l.horas, 0);
+const fmtHorasSinal = (h) => (h > 0 ? `+${fmtHoras(h)}` : fmtHoras(h));
+
+// "2 dias de folga", "1 dia e 4h de folga", "3h em débito" ou "Sem lançamentos".
+function equivalenteBH(total) {
+  if (!total) return 'Sem lançamentos';
+  const abs = Math.abs(total);
+  const dias = Math.floor(abs / 8);
+  const resto = Math.round((abs - dias * 8) * 2) / 2;
+  const partes = [];
+  if (dias) partes.push(`${dias} dia${dias > 1 ? 's' : ''}`);
+  if (resto) partes.push(fmtHoras(resto));
+  return `${partes.join(' e ')} ${total > 0 ? 'de folga' : 'em débito'}`;
+}
+
+function renderBancoHoras() {
+  const el = $('#lista-bh');
+  if (!el) return;
+  const busca = state.filtroBH.busca.trim().toLowerCase();
+  const lista = state.colaboradores
+    .filter((c) => !busca || c.nome.toLowerCase().includes(busca))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  if (!lista.length) {
+    el.innerHTML = `<div class="empty">${state.colaboradores.length ? 'Nenhum colaborador encontrado.' : 'Nenhum colaborador cadastrado ainda.'}</div>`;
+    return;
+  }
+  el.innerHTML = `<table class="list bh-tabela"><thead><tr>
+      <th>Nome</th><th>Torre</th><th>Turno</th><th>Saldo</th><th>Equivalente</th><th></th>
+    </tr></thead><tbody>${lista
+      .map((c) => {
+        const total = saldoBH(c.id);
+        const n = lancamentosDe(c.id).length;
+        return `<tr class="${c.ativo ? '' : 'inativo'}" data-id="${c.id}">
+          <td>${esc(c.nome)}</td>
+          <td>${tagTorre(porId(state.torres, c.torre_id))}</td>
+          <td>${tagTurno(porId(state.turnos, c.turno_id))}</td>
+          <td class="bh-saldo-cel ${total > 0 ? 'pos' : total < 0 ? 'neg' : 'muted'}">${fmtHoras(total)}</td>
+          <td class="muted">${equivalenteBH(total)}</td>
+          <td class="actions"><button class="ghost" data-bh-abrir="${c.id}">${n ? 'Ver lançamentos' : 'Lançar horas'}</button></td>
+        </tr>`;
+      })
+      .join('')}</tbody></table>`;
+  el.onclick = (e) => {
+    const b = e.target.closest('[data-bh-abrir]');
+    if (b) dialogBancoHoras(porId(state.colaboradores, Number(b.dataset.bhAbrir)));
+  };
+}
+
+// Dialog com o histórico de lançamentos do colaborador e um mini-formulário para lançar um novo, sem fechar
+// (cada botão cuida do próprio envio, em vez do fluxo padrão de abrirDialog).
+function dialogBancoHoras(c) {
+  dialog.classList.add('larga');
+  dialog.addEventListener('close', () => dialog.classList.remove('larga'), { once: true });
+  dialogForm.onsubmit = (e) => e.preventDefault();
+  const render = () => {
+    const lista = [...lancamentosDe(c.id)].sort((a, b) => b.data.localeCompare(a.data) || b.id - a.id);
+    const total = lista.reduce((n, l) => n + l.horas, 0);
+    dialogForm.innerHTML = `
+      <header><h2>Banco de horas — ${esc(c.nome)}</h2></header>
+      <div class="body">
+        <div class="bh-saldo-grande">Saldo: <strong class="${total > 0 ? 'pos' : total < 0 ? 'neg' : ''}">${fmtHoras(
+          total
+        )}</strong> <span class="muted">(${equivalenteBH(total)})</span></div>
+        <div class="bh-novo">
+          <label class="field"><span>Data</span><input type="date" data-bh-data value="${hojeStr()}"></label>
+          <label class="field"><span>Horas</span><input type="text" inputmode="decimal" data-bh-horas placeholder="8 ou -8"></label>
+          <label class="field bh-obs-campo"><span>Observação</span><input type="text" maxlength="200" data-bh-obs placeholder="opcional"></label>
+          <button type="button" class="primary" data-bh-lancar>Lançar</button>
+        </div>
+        <p class="form-error" data-bh-erro></p>
+        ${
+          lista.length
+            ? `<table class="list bh-historico"><thead><tr><th>Data</th><th>Horas</th><th>Observação</th><th></th></tr></thead><tbody>${lista
+                .map(
+                  (l) =>
+                    `<tr><td>${l.data.split('-').reverse().join('/')}</td><td class="${
+                      l.horas < 0 ? 'neg' : 'pos'
+                    }">${fmtHorasSinal(l.horas)}</td><td>${esc(l.observacao || '')}</td><td class="actions"><button type="button" class="ghost danger icon" data-bh-del="${
+                      l.id
+                    }" title="Excluir">✕</button></td></tr>`
+                )
+                .join('')}</tbody></table>`
+            : '<p class="muted vazio">Nenhum lançamento ainda.</p>'
+        }
+      </div>
+      <footer><button type="button" data-cancel>Fechar</button></footer>`;
+    $('[data-cancel]', dialogForm).onclick = () => dialog.close();
+    $('[data-bh-lancar]', dialogForm).onclick = async () => {
+      const data = dialogForm.querySelector('[data-bh-data]').value;
+      const horas = dialogForm.querySelector('[data-bh-horas]').value;
+      const observacao = dialogForm.querySelector('[data-bh-obs]').value;
+      const erroEl = dialogForm.querySelector('[data-bh-erro]');
+      erroEl.textContent = '';
+      try {
+        await api('POST', '/banco-horas', { colaborador_id: c.id, data, horas, observacao });
+        await carregarBancoHoras();
+        render();
+        renderBancoHoras();
+        toast('Lançamento adicionado.');
+      } catch (err) {
+        erroEl.textContent = err.message;
+      }
+    };
+    dialogForm.querySelectorAll('[data-bh-del]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm('Excluir este lançamento?')) return;
+        try {
+          await api('DELETE', `/banco-horas/${btn.dataset.bhDel}`);
+          await carregarBancoHoras();
+          render();
+          renderBancoHoras();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      };
+    });
+  };
+  render();
+  dialog.showModal();
+}
+
+// =====================================================================
 // CADASTROS: TORRES E TURNOS
 // =====================================================================
 
@@ -2785,9 +2939,11 @@ function telaLogin() {
 function renderUsuario() {
   const el = $('#usuario');
   const u = state.usuario;
-  // Item "Colaboradores" do menu só para admins.
-  const menuColab = document.querySelector('nav a[data-view="colaboradores"]');
-  if (menuColab) menuColab.hidden = !u?.admin;
+  // Itens "Colaboradores" e "Banco de Horas" do menu só para admins.
+  for (const v of ['colaboradores', 'banco-horas']) {
+    const item = document.querySelector(`nav a[data-view="${v}"]`);
+    if (item) item.hidden = !u?.admin;
+  }
   el.hidden = !u;
   if (!u) return;
   el.innerHTML = `

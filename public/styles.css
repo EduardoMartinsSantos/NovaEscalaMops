@@ -557,3 +557,21 @@ table.grid tfoot .alerta-fds { margin-left: 2px; font-weight: 800; letter-spacin
 }
 .dash-sub-folga h3 { color: #d9534f; }
 .dash-sub-folga .dash-pessoas li { border-bottom-color: color-mix(in srgb, #d9534f 25%, transparent); }
+
+/* Banco de horas */
+.bh-saldo-cel { font-weight: 700; font-variant-numeric: tabular-nums; }
+.bh-saldo-cel.pos, .pos { color: #0b5a1c; }
+.bh-saldo-cel.neg, .neg { color: #9c0006; }
+@media (prefers-color-scheme: dark) {
+  .bh-saldo-cel.pos, .pos { color: #7bd68c; }
+  .bh-saldo-cel.neg, .neg { color: #ff9b9b; }
+}
+dialog.larga { width: min(640px, calc(100vw - 32px)); }
+.bh-saldo-grande { font-size: 15px; }
+.bh-saldo-grande strong { font-variant-numeric: tabular-nums; }
+.bh-novo { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.bh-novo .field { flex: 1 1 110px; min-width: 0; }
+.bh-novo .bh-obs-campo { flex: 2 1 160px; }
+.bh-novo button { flex: none; }
+.bh-historico { font-size: 13px; }
+.bh-historico td, .bh-historico th { padding: 7px 10px; }

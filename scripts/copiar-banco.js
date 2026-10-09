@@ -37,6 +37,7 @@ const TABELAS = {
   ],
   escala: ['colaborador_id', 'data', 'tipo', 'turno_id'],
   sobreaviso: ['torre_id', 'data', 'colaborador_id', 'horas', 'tipo'],
+  banco_horas: ['id', 'colaborador_id', 'data', 'horas', 'observacao', 'criado_em'],
 };
 
 async function main() {
@@ -64,7 +65,7 @@ async function main() {
   }
 
   await destino.transacao(async () => {
-    await destino.exec('TRUNCATE sobreaviso, escala, colaboradores, contratos, mesas, turnos, torres RESTART IDENTITY CASCADE');
+    await destino.exec('TRUNCATE banco_horas, sobreaviso, escala, colaboradores, contratos, mesas, turnos, torres RESTART IDENTITY CASCADE');
     for (const [tabela, cols] of Object.entries(colunas)) {
       const marcadores = cols.map(() => '?').join(', ');
       for (const linha of dados[tabela]) {
