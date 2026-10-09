@@ -181,11 +181,14 @@ table.grid.planilha td.p-trab { background: #c6efce; color: #0b5a1c; }
 table.grid.planilha td.p-folga { background: #e6a5a5; }
 table.grid.planilha td.p-ferias { background: #bdd7ee; color: #1f3b64; font-weight: 700; }
 table.grid.planilha td.p-atestado { background: #ffe699; color: #7a5b00; font-weight: 700; }
+/* Folga financiada pelo banco de horas: só é criada pelo painel de Banco de Horas (Agendar folga). */
+table.grid.planilha td.p-folga-banco { background: #ddd3f7; color: #4c1d95; }
 @media (prefers-color-scheme: dark) {
   table.grid.planilha td.p-trab { background: #1f4d2b; color: #b7f0c4; }
   table.grid.planilha td.p-folga { background: #5c2626; }
   table.grid.planilha td.p-ferias { background: #1e3a5f; color: #cfe3fa; }
   table.grid.planilha td.p-atestado { background: #5a4a12; color: #ffe8a3; }
+  table.grid.planilha td.p-folga-banco { background: #3b2d63; color: #d9c8f5; }
   table.grid.planilha tr.group td { background: #3a3f48; }
 }
 
@@ -579,3 +582,4 @@ dialog.larga { width: min(640px, calc(100vw - 32px)); }
 .bh-sep .hint { margin: 8px 0 0; }
 .bh-historico { font-size: 13px; }
 .bh-historico td, .bh-historico th { padding: 7px 10px; }
+.bh-ponto-folga { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; margin-right: 5px; vertical-align: middle; }

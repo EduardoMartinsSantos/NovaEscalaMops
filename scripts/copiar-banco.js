@@ -37,7 +37,7 @@ const TABELAS = {
   ],
   escala: ['colaborador_id', 'data', 'tipo', 'turno_id'],
   sobreaviso: ['torre_id', 'data', 'colaborador_id', 'horas', 'tipo'],
-  banco_horas: ['id', 'colaborador_id', 'data', 'horas', 'observacao', 'criado_em'],
+  banco_horas: ['id', 'colaborador_id', 'data', 'horas', 'observacao', 'tipo', 'criado_em'],
 };
 
 async function main() {
@@ -72,7 +72,7 @@ async function main() {
         await destino.exec(`INSERT INTO ${tabela} (${cols.join(', ')}) VALUES (${marcadores})`, cols.map((c) => linha[c]));
       }
     }
-    for (const tabela of ['torres', 'turnos', 'mesas', 'contratos', 'colaboradores']) {
+    for (const tabela of ['torres', 'turnos', 'mesas', 'contratos', 'colaboradores', 'banco_horas']) {
       await destino.q(`SELECT setval(pg_get_serial_sequence('${tabela}', 'id'), GREATEST((SELECT MAX(id) FROM ${tabela}), 1))`);
     }
   });

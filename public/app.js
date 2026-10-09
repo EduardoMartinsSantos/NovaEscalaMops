@@ -395,6 +395,7 @@ const XL = {
   grupo: { bold: true, color: '#FFFFFF', bg: '#A3A3A3' },
   trabalho: { bg: '#C6EFCE', color: '#0B5A1C' },
   folga: { bg: '#E6A5A5' },
+  folgaBanco: { bg: '#DDD3F7', color: '#4C1D95' }, // folga financiada pelo banco de horas (roxa)
   ferias: { bg: '#BDD7EE', color: '#1F3B64', bold: true },
   atestado: { bg: '#FFE699', color: '#7A5B00', bold: true },
   fimDeSemana: { bg: '#F3F4F8' },
@@ -445,6 +446,7 @@ function exportarExcel() {
     if (!x) return { v: '', e: XL.folga }; // sem lançamento = folga
     if (x.tipo === 'TURNO') return { v: textoPlanilha(x, c), e: XL.trabalho };
     if (x.tipo === 'FOLGA') return { v: '', e: XL.folga };
+    if (x.tipo === 'FOLGA_BANCO') return { v: '', e: XL.folgaBanco };
     return { v: AUSENCIAS[x.tipo].nome.toUpperCase(), e: x.tipo === 'FERIAS' ? XL.ferias : XL.atestado };
   };
 
@@ -570,7 +572,8 @@ function nomePlanilha(c, { escala, horario, arrastavel } = {}) {
 // Dia sem lançamento na escala é exibido como folga (o banco não guarda nada para ele).
 function classePlanilha(cel) {
   if (!cel) return 'p-folga';
-  return { TURNO: 'p-trab', FOLGA: 'p-folga', FERIAS: 'p-ferias', ATESTADO: 'p-atestado' }[cel.tipo];
+  // FOLGA_BANCO: folga financiada pelo banco de horas (roxa) — só criada pelo painel de Banco de Horas.
+  return { TURNO: 'p-trab', FOLGA: 'p-folga', FOLGA_BANCO: 'p-folga-banco', FERIAS: 'p-ferias', ATESTADO: 'p-atestado' }[cel.tipo];
 }
 
 const horarioDoTurno = (t) => (t ? `${t.inicio} às ${t.fim}` : '');
@@ -602,7 +605,7 @@ const horarioSobreaviso = (t) => (t?.sobreaviso_inicio ? `${t.sobreaviso_inicio}
 // Texto do quadrado do dia: vazio no turno esperado da pessoa naquele dia (normal ou de fim de semana — o horário
 // fica nas colunas); o código do turno quando é outro; férias e atestado por extenso.
 function textoPlanilha(cel, c) {
-  if (!cel || cel.tipo === 'FOLGA') return '';
+  if (!cel || cel.tipo === 'FOLGA' || cel.tipo === 'FOLGA_BANCO') return '';
   if (cel.tipo === 'TURNO') {
     return cel.turno_id !== turnoDoDia(c, cel.data) ? porId(state.turnos, cel.turno_id)?.codigo || '' : '';
   }
@@ -615,6 +618,7 @@ function tituloCelula(cel) {
     const t = porId(state.turnos, cel.turno_id);
     return t ? `${t.codigo} · ${horarioDoTurno(t)}` : '';
   }
+  if (cel.tipo === 'FOLGA_BANCO') return 'Folga (banco de horas)';
   return AUSENCIAS[cel.tipo].nome;
 }
 
@@ -1486,7 +1490,11 @@ function renderDashboard(escala, fds) {
   const data = state.dashData;
   const equipe = state.colaboradores.filter((c) => c.ativo && c.na_escala);
   const cel = new Map(escala.celulas.filter((x) => x.data === data).map((x) => [x.colaborador_id, x]));
-  const situacao = (c) => cel.get(c.id)?.tipo || 'FOLGA';
+  // FOLGA_BANCO conta como folga aqui (a cor roxa só aparece na escala, não no dashboard).
+  const situacao = (c) => {
+    const t = cel.get(c.id)?.tipo || 'FOLGA';
+    return t === 'FOLGA_BANCO' ? 'FOLGA' : t;
+  };
 
   // Torres na ordem do cadastro; quem não tem torre vai num grupo à parte.
   const grupos = state.torres
@@ -2459,11 +2467,13 @@ function dialogBancoHoras(c) {
             ? `<table class="list bh-historico"><thead><tr><th>Data</th><th>Horas</th><th>Observação</th><th></th></tr></thead><tbody>${lista
                 .map(
                   (l) =>
-                    `<tr><td class="muted">${l.data.split('-').reverse().join('/')}</td><td class="${
+                    `<tr><td class="muted">${
+                      l.tipo === 'FOLGA' ? '<i class="bh-ponto-folga" title="Agendada pelo Banco de Horas (está roxa na escala)"></i>' : ''
+                    }${l.data.split('-').reverse().join('/')}</td><td class="${
                       l.horas < 0 ? 'neg' : 'pos'
                     }">${fmtHorasSinal(l.horas)}</td><td>${esc(l.observacao || '')}</td><td class="actions"><button type="button" class="ghost danger icon" data-bh-del="${
                       l.id
-                    }" title="Excluir">✕</button></td></tr>`
+                    }" data-bh-del-tipo="${l.tipo}" title="Excluir">✕</button></td></tr>`
                 )
                 .join('')}</tbody></table>`
             : '<p class="muted vazio">Nenhum lançamento ainda.</p>'
@@ -2487,29 +2497,33 @@ function dialogBancoHoras(c) {
       }
     };
     // Agendar folga: escolhe o dia e desconta 1 dia (8h) fixo do saldo — sem precisar digitar horas.
+    // É o único jeito de marcar FOLGA_BANCO (roxa) na escala; o pincel e o clique na célula não oferecem essa opção.
     $('[data-bh-agendar]', dialogForm).onclick = async () => {
       const data = dialogForm.querySelector('[data-bh-folga-data]').value;
-      const observacaoDigitada = dialogForm.querySelector('[data-bh-folga-obs]').value.trim();
+      const observacao = dialogForm.querySelector('[data-bh-folga-obs]').value;
       const erroEl = dialogForm.querySelector('[data-bh-erro]');
       erroEl.textContent = '';
       if (!data) {
         erroEl.textContent = 'Escolha o dia da folga.';
         return;
       }
-      const observacao = observacaoDigitada || `Folga agendada para ${data.split('-').reverse().join('/')}`;
       try {
-        await api('POST', '/banco-horas', { colaborador_id: c.id, data, horas: -HORAS_POR_DIA_BH, observacao });
+        await api('POST', '/banco-horas/agendar-folga', { colaborador_id: c.id, data, observacao });
         await carregarBancoHoras();
         render();
         renderBancoHoras();
-        toast('Folga agendada.');
+        toast('Folga agendada — já aparece roxa na escala.');
       } catch (err) {
         erroEl.textContent = err.message;
       }
     };
     dialogForm.querySelectorAll('[data-bh-del]').forEach((btn) => {
       btn.onclick = async () => {
-        if (!confirm('Excluir este lançamento?')) return;
+        const mensagem =
+          btn.dataset.bhDelTipo === 'FOLGA'
+            ? 'Excluir esta folga agendada? Ela também vai sumir (roxa) da escala.'
+            : 'Excluir este lançamento?';
+        if (!confirm(mensagem)) return;
         try {
           await api('DELETE', `/banco-horas/${btn.dataset.bhDel}`);
           await carregarBancoHoras();
