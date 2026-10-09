@@ -363,6 +363,8 @@ table.list.editavel.travada td.ed select:disabled {
 }
 table.list.editavel.travada td.ed select.tag-sel:disabled { border-left: 4px solid var(--c) !important; }
 table.list.editavel.travada td.ed input[type=checkbox]:disabled { opacity: 1; cursor: default; }
+/* Checkbox de seleção (marcar para editar/excluir em massa): só aparece depois de clicar em "Editar". */
+table.list.editavel.travada th.sel, table.list.editavel.travada td.sel { display: none; }
 
 /* Tabelas extras da escala (12x36, Sobreaviso): título e separação */
 .grid-wrap .tabela-titulo {
