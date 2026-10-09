@@ -2380,6 +2380,9 @@ function equivalenteBH(total) {
   return `${partes.join(' e ')} ${total > 0 ? 'de folga' : 'em débito'}`;
 }
 
+// Dias completos de folga a partir do saldo em horas (a cada 8h = 1 dia; a hora restante fica só no Saldo).
+const diasBH = (total) => Math.trunc(total / 8);
+
 function renderBancoHoras() {
   const el = $('#lista-bh');
   if (!el) return;
@@ -2392,17 +2395,18 @@ function renderBancoHoras() {
     return;
   }
   el.innerHTML = `<table class="list bh-tabela"><thead><tr>
-      <th>Nome</th><th>Torre</th><th>Turno</th><th>Saldo</th><th>Equivalente</th><th></th>
+      <th>Nome</th><th>Torre</th><th>Turno</th><th>Saldo</th><th title="A cada 8h de saldo, 1 dia de folga">Dias</th><th></th>
     </tr></thead><tbody>${lista
       .map((c) => {
         const total = saldoBH(c.id);
+        const dias = diasBH(total);
         const n = lancamentosDe(c.id).length;
         return `<tr class="${c.ativo ? '' : 'inativo'}" data-id="${c.id}">
           <td>${esc(c.nome)}</td>
           <td>${tagTorre(porId(state.torres, c.torre_id))}</td>
           <td>${tagTurno(porId(state.turnos, c.turno_id))}</td>
           <td class="bh-saldo-cel ${total > 0 ? 'pos' : total < 0 ? 'neg' : 'muted'}">${fmtHoras(total)}</td>
-          <td class="muted">${equivalenteBH(total)}</td>
+          <td class="bh-dias-cel ${dias > 0 ? 'pos' : dias < 0 ? 'neg' : 'muted'}">${dias}</td>
           <td class="actions"><button class="ghost" data-bh-abrir="${c.id}">${n ? 'Ver lançamentos' : 'Lançar horas'}</button></td>
         </tr>`;
       })

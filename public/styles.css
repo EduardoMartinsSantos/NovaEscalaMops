@@ -559,7 +559,7 @@ table.grid tfoot .alerta-fds { margin-left: 2px; font-weight: 800; letter-spacin
 .dash-sub-folga .dash-pessoas li { border-bottom-color: color-mix(in srgb, #d9534f 25%, transparent); }
 
 /* Banco de horas */
-.bh-saldo-cel { font-weight: 700; font-variant-numeric: tabular-nums; }
+.bh-saldo-cel, .bh-dias-cel { font-weight: 700; font-variant-numeric: tabular-nums; }
 .bh-saldo-cel.pos, .pos { color: #0b5a1c; }
 .bh-saldo-cel.neg, .neg { color: #9c0006; }
 @media (prefers-color-scheme: dark) {
