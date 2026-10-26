@@ -56,8 +56,11 @@ body {
 nav { display: flex; flex-direction: column; gap: 2px; }
 nav a {
   color: var(--text); text-decoration: none; padding: 8px 10px; border-radius: 8px; font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
 }
 nav a:hover { background: var(--surface-2); }
+/* Ícones do menu: só aparecem na barra inferior do celular (ver breakpoint de 760px). */
+.nav-icone { display: none; font-size: 18px; line-height: 1; }
 nav a.active { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
 .nav-group {
   margin: 16px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em;
@@ -71,6 +74,9 @@ main { padding: 24px 28px; min-width: 0; }
 .page-head p { margin: 2px 0 0; color: var(--muted); }
 
 .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+/* No desktop a "parte extra" do toolbar (agrupamentos, exportar...) participa do flex normalmente. */
+.toolbar-extra { display: contents; }
+#toolbar-toggle { display: none; }
 .toolbar .spacer { flex: 1; }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
@@ -243,17 +249,32 @@ dialog footer { padding: 14px 22px 18px; display: flex; justify-content: flex-en
 
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; padding: 10px 16px; display: flex; align-items: center; gap: 12px; overflow-x: auto; }
-  .brand { padding: 0; }
-  nav { flex-direction: row; }
+  /* Menu vira uma barra de ícones fixa no rodapé, como um app mobile. */
+  .sidebar {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; height: auto; z-index: 40;
+    border-right: 0; border-top: 1px solid var(--border);
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: stretch; gap: 0;
+  }
+  .brand { display: none; }
+  nav { flex: 1 1 auto; flex-direction: row; gap: 0; }
+  nav a {
+    flex: 1; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 2px;
+    font-size: 10px; text-align: center; min-width: 0;
+  }
+  .nav-icone { display: block; }
+  .nav-rotulo { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .nav-group { display: none; }
-  main { padding: 16px; }
+  main { padding: 16px; padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px)); }
   table.grid .name { min-width: 160px; max-width: 160px; }
   .row { grid-template-columns: 1fr; }
   .list-wrap { overflow-x: auto; }
   .page-head, .head-actions, .dash-fds-head { flex-wrap: wrap; }
   .head-actions, .page-head { width: 100%; }
   .toolbar #busca, .toolbar #f-busca, .toolbar #busca-bh { flex: 1 1 100%; }
+  /* Agrupamentos, exportar etc. ficam recolhidos; "Mais opções" abre quando pedido. */
+  #toolbar-toggle { display: flex; width: 100%; justify-content: center; order: 1; }
+  .toolbar-extra { display: none; width: 100%; flex-wrap: wrap; gap: 8px; order: 2; }
+  .toolbar-extra.aberta { display: flex; }
   .grid-wrap { max-height: calc(100vh - 300px); }
 }
 
@@ -354,8 +375,13 @@ body.deslogado .layout { grid-template-columns: 1fr; }
 .login-card p { margin: 0; }
 .login-card .brand { padding: 0; }
 @media (max-width: 760px) {
-  .usuario { margin: 0 0 0 auto; padding: 0; border: 0; display: flex; align-items: center; }
+  /* Trocar senha / Sair viram mais dois ícones na mesma barra do rodapé. */
+  .usuario { margin: 0; padding: 0; border: 0; display: flex; align-items: stretch; gap: 0; flex: 0 0 auto; }
   .usuario-nome { display: none; }
+  .usuario button {
+    flex-direction: column; justify-content: center; gap: 2px; padding: 4px 8px; font-size: 10px;
+    border: 0; background: transparent; border-radius: 8px;
+  }
 }
 .tag.mesa::before { content: "▣"; font-size: 10px; }
 

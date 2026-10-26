@@ -320,17 +320,20 @@ function viewEscala() {
     <div class="kpi-row" id="kpis-escala"></div>
     <div class="toolbar">
       <input id="f-busca" type="search" placeholder="Buscar colaborador…" value="${esc(f.busca)}">
-      <button class="ghost" id="limpar-filtros-escala" title="Remover os filtros das colunas" hidden>✕ Limpar filtros</button>
-      <button class="ghost" id="ordem-padrao" title="Voltar as linhas para a ordem automática (torre/turno e nome)" hidden>↺ Ordem padrão</button>
-      <div class="segmented" id="agrupar" role="group" aria-label="Agrupar por">
-        <span>Agrupar por</span>
-        <button data-g="turno" class="${state.agrupar === 'turno' ? 'active' : ''}">Turno</button>
-        <button data-g="fds" class="${state.agrupar === 'fds' ? 'active' : ''}" title="Agrupa pelo turno de fim de semana">Fim de semana</button>
+      <button class="ghost" id="toolbar-toggle" aria-expanded="false">☰ Mais opções</button>
+      <div class="toolbar-extra" id="toolbar-extra">
+        <button class="ghost" id="limpar-filtros-escala" title="Remover os filtros das colunas" hidden>✕ Limpar filtros</button>
+        <button class="ghost" id="ordem-padrao" title="Voltar as linhas para a ordem automática (torre/turno e nome)" hidden>↺ Ordem padrão</button>
+        <div class="segmented" id="agrupar" role="group" aria-label="Agrupar por">
+          <span>Agrupar por</span>
+          <button data-g="turno" class="${state.agrupar === 'turno' ? 'active' : ''}">Turno</button>
+          <button data-g="fds" class="${state.agrupar === 'fds' ? 'active' : ''}" title="Agrupa pelo turno de fim de semana">Fim de semana</button>
+        </div>
+        <span class="spacer"></span>
+        <button class="icon" id="cfg-colunas" title="Escolher as colunas exibidas" aria-label="Escolher as colunas exibidas">⚙</button>
+        <button id="btn-excel" class="primary">Exportar Excel</button>
+        <a class="btn" id="btn-exportar" title="Exportar em CSV (texto simples)">CSV</a>
       </div>
-      <span class="spacer"></span>
-      <button class="icon" id="cfg-colunas" title="Escolher as colunas exibidas" aria-label="Escolher as colunas exibidas">⚙</button>
-      <button id="btn-excel" class="primary">Exportar Excel</button>
-      <a class="btn" id="btn-exportar" title="Exportar em CSV (texto simples)">CSV</a>
     </div>
     <div class="legend" id="legenda"></div>
     <div class="card grid-wrap" id="grid"><div class="empty">Carregando…</div></div>`;
@@ -338,6 +341,11 @@ function viewEscala() {
   $('#mes-ant').onclick = () => trocarMes(somarMes(state.mes, -1));
   $('#mes-prox').onclick = () => trocarMes(somarMes(state.mes, 1));
   $('#mes-hoje').onclick = () => trocarMes(mesAtual());
+  $('#toolbar-toggle').onclick = (e) => {
+    const aberta = $('#toolbar-extra').classList.toggle('aberta');
+    e.currentTarget.textContent = aberta ? '✕ Fechar opções' : '☰ Mais opções';
+    e.currentTarget.setAttribute('aria-expanded', String(aberta));
+  };
   $('#ordem-padrao').onclick = async () => {
     if (!confirm('Voltar todas as linhas da escala para a ordem automática? A ordem definida arrastando será perdida.')) return;
     try {
@@ -3262,8 +3270,8 @@ function renderUsuario() {
   if (!u) return;
   el.innerHTML = `
     <div class="usuario-nome" title="${esc(u.email)}">${esc(u.nome)}${u.admin ? ' <span class="muted">· admin</span>' : ''}</div>
-    <button class="ghost" id="btn-senha">Trocar senha</button>
-    <button class="ghost" id="btn-sair">Sair</button>`;
+    <button class="ghost" id="btn-senha"><span class="nav-icone">⚿</span><span class="nav-rotulo">Trocar senha</span></button>
+    <button class="ghost" id="btn-sair"><span class="nav-icone">↪</span><span class="nav-rotulo">Sair</span></button>`;
   $('#btn-senha').onclick = dialogTrocarSenha;
   $('#btn-sair').onclick = async () => {
     await api('POST', '/logout').catch(() => {});
