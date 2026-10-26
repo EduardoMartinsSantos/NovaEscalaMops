@@ -592,3 +592,14 @@ dialog.larga { width: min(640px, calc(100vw - 32px)); }
 .bh-historico { font-size: 13px; }
 .bh-historico td, .bh-historico th { padding: 7px 10px; }
 .bh-ponto-folga { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; margin-right: 5px; vertical-align: middle; }
+
+/* Repetir padrão (escala) */
+.rp-presets { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rp-ciclo { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 6px; }
+.rp-dia { padding: 6px 4px; font-size: 11px; line-height: 1.3; text-align: center; border-radius: 8px; }
+.rp-dia.pos { background: color-mix(in srgb, #0b5a1c 18%, transparent); }
+.rp-dia.neg { background: color-mix(in srgb, #9c0006 18%, transparent); }
+.rp-preview { margin-top: 4px; }
+.rp-preview-lista { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; font-size: 13px; }
+.rp-preview-lista li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.rp-preview-lista li:last-child { border-bottom: 0; }
