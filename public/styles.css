@@ -251,6 +251,10 @@ dialog footer { padding: 14px 22px 18px; display: flex; justify-content: flex-en
   table.grid .name { min-width: 160px; max-width: 160px; }
   .row { grid-template-columns: 1fr; }
   .list-wrap { overflow-x: auto; }
+  .page-head, .head-actions, .dash-fds-head { flex-wrap: wrap; }
+  .head-actions, .page-head { width: 100%; }
+  .toolbar #busca, .toolbar #f-busca, .toolbar #busca-bh { flex: 1 1 100%; }
+  .grid-wrap { max-height: calc(100vh - 300px); }
 }
 
 /* Seleção e edição em massa */
