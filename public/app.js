@@ -1179,7 +1179,11 @@ function dialogPadraoTrabalho() {
 }
 
 // Aplica o padrão semanal configurado a um colaborador: alinha o ciclo (seg..dom) às datas reais do período.
-async function aplicarPadraoTrabalho(colaboradorId) {
+// Aplica na hora (otimista, como os outros pincéis) e manda pro servidor em segundo plano; erro desfaz e
+// recarrega. `jaFeitas` evita reaplicar a mesma linha várias vezes no mesmo arraste (um mouseover por célula).
+async function aplicarPadraoTrabalho(colaboradorId, jaFeitas) {
+  if (jaFeitas?.has(colaboradorId)) return;
+  jaFeitas?.add(colaboradorId);
   const c = porId(state.colaboradores, colaboradorId);
   const ini = state.padraoTrabIni;
   const fim = state.padraoTrabFim;
@@ -1196,12 +1200,19 @@ async function aplicarPadraoTrabalho(colaboradorId) {
     const trabalho = ciclo[(diaSemana(data) + 6) % 7] === 'T';
     return { colaborador_id: c.id, data, tipo: trabalho ? 'TURNO' : 'FOLGA', turno_id: trabalho ? c.turno_id : null };
   });
+  // Atualização otimista: pinta na hora, igual aos outros pincéis; o PUT roda em segundo plano.
+  const lista = state.escala.celulas;
+  for (const cel of celulas) {
+    const i = lista.findIndex((x) => x.colaborador_id === cel.colaborador_id && x.data === cel.data);
+    if (i >= 0) lista.splice(i, 1);
+    lista.push(cel);
+  }
+  renderGrade();
   try {
     await api('PUT', '/escala/lote', { celulas });
-    await carregarEscala();
-    toast(`Padrão aplicado a ${c.nome} (${dias} dia(s)).`);
   } catch (err) {
     toast(err.message, true);
+    await carregarEscala();
   }
 }
 
@@ -1288,6 +1299,9 @@ async function aplicarSobreaviso(torreId, data, colaboradorId, { horas = null, r
 
 let pintando = false;
 document.addEventListener('mouseup', () => (pintando = false));
+// Linhas (colaborador_id) já aplicadas no arraste atual do pincel Padrão de trabalho — evita reaplicar a
+// mesma linha a cada célula sob o mouse.
+const linhasPadraoDrag = new Set();
 
 // Série que o pincel ativo aplicaria nessa célula de sobreaviso ('' = nenhuma).
 function serieDoPincel(td) {
@@ -1303,7 +1317,8 @@ const horasPontuais = () => lerSerie(state.serieSA).find((h) => h !== null) ?? 8
 // (no sobreaviso, Folga/Férias marcam o dia no lugar das horas e Limpar apaga).
 function pintar(td) {
   if (td.matches('td.cell')) {
-    if (state.pincel !== 'SA') aplicarCelula(Number(td.dataset.c), td.dataset.d, state.pincel);
+    if (state.pincel === 'PADRAO_TRAB') aplicarPadraoTrabalho(Number(td.dataset.c), linhasPadraoDrag);
+    else if (state.pincel !== 'SA') aplicarCelula(Number(td.dataset.c), td.dataset.d, state.pincel);
     return;
   }
   const args = [Number(td.dataset.t), td.dataset.d, Number(td.dataset.c)];
@@ -1373,7 +1388,12 @@ function ligarEventosGrade() {
   wrap.addEventListener('mousedown', (e) => {
     if (!podeEditarEscala()) return;
     const td = alvo(e);
-    if (!td || state.pincel === null || state.pincel === 'PADRAO_TRAB' || aplicaNoClique() || e.button !== 0) return;
+    if (!td || state.pincel === null || aplicaNoClique() || e.button !== 0) return;
+    if (state.pincel === 'PADRAO_TRAB' && !state.padraoTrabIni) {
+      toast('Configure o período no ⚙ antes de aplicar.', true);
+      return;
+    }
+    linhasPadraoDrag.clear();
     e.preventDefault();
     pintando = true;
     pintar(td);
@@ -1476,15 +1496,6 @@ function ligarEventosGrade() {
       return renderGrade();
     }
     if (!podeEditarEscala()) return;
-    if (state.pincel === 'PADRAO_TRAB') {
-      if (!state.padraoTrabIni) {
-        toast('Configure o período no ⚙ antes de aplicar.', true);
-        return;
-      }
-      const tr = e.target.closest('tr[data-colab]');
-      if (tr) aplicarPadraoTrabalho(Number(tr.dataset.colab));
-      return;
-    }
     if (aplicaNoClique()) {
       const td = e.target.closest('td.sa-cell');
       if (!td) return;
