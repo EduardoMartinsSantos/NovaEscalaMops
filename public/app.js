@@ -96,7 +96,10 @@ const state = {
   filtrosEscala: {}, // filtros por coluna da escala, estilo Excel (chave → Set de valores permitidos)
   // 'turno' | 'fds' (o agrupamento por torre foi removido; preferência antiga vira 'turno').
   agrupar: lerPreferencia('agrupar', 'turno') === 'fds' ? 'fds' : 'turno',
-  detalhesRecolhidos: lerPreferencia('detalhesRecolhidos', '0') === '1', // colunas Torre…Escala recolhidas na escala
+  // Colunas Torre…Escala recolhidas na escala; no celular começa recolhido (só Nome), sem mexer na preferência
+  // de quem já escolheu antes nesse navegador. O botão ◂/▸ continua liberando as colunas quando quiser.
+  detalhesRecolhidos:
+    lerPreferencia('detalhesRecolhidos', window.matchMedia?.('(max-width: 760px)')?.matches ? '1' : '0') === '1',
   // Colunas de informação escondidas pela engrenagem da escala (chaves de COLUNAS_INFO).
   colunasOcultas: new Set(lerPreferencia('colunasOcultas', '').split(',').filter(Boolean)),
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
