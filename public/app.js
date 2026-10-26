@@ -943,10 +943,10 @@ function renderLegenda() {
         item('SERIE', '<span class="chip sa-chip">⇶</span>', 'Série fixa', fixas)
       : '') +
     `<span class="legend-sep"></span>` +
-    `<button class="ghost" id="repetir-padrao" title="Repetir um padrão de trabalho/folga num intervalo de dias">↻ Repetir padrão</button>` +
+    `<button class="ghost" id="padrao-trabalho" title="Aplicar um padrão de trabalho/folga a vários colaboradores de uma vez">↻ Padrão de trabalho</button>` +
     (state.pincel !== null ? `<span class="label" style="margin-left:8px">Pincel ativo — Esc para sair</span>` : '');
   el.onclick = (e) => {
-    if (e.target.closest('#repetir-padrao')) return dialogRepetirPadrao();
+    if (e.target.closest('#padrao-trabalho')) return dialogPadraoTrabalho();
     if (e.target.closest('#cfg-serie-sa')) return dialogSerieSA();
     const b = e.target.closest('button[data-pincel]');
     if (!b) return;
@@ -1099,144 +1099,151 @@ function dialogSerieSA() {
   });
 }
 
-// "Repetir padrão": aplica um ciclo de trabalho/folga a um colaborador num intervalo de datas.
-// TC e TP são atalhos que preenchem o ciclo abaixo; dá pra editar livremente (padrão personalizado).
-function dialogRepetirPadrao() {
-  const colaboradores = state.colaboradores.filter((c) => c.ativo && c.na_escala).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+// "Padrão de trabalho": aplica um padrão semanal (seg a dom) de trabalho/folga a vários colaboradores
+// de uma vez, filtrando por torre/turno/colaborador (ou "Todos"), num período de datas.
+function dialogPadraoTrabalho() {
+  const colabsBase = () => state.colaboradores.filter((c) => c.ativo && c.na_escala);
   const diasMes = state.escala?.dias || [];
+  const DIAS_SEMANA = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+  const idxSemana = (data) => (diaSemana(data) + 6) % 7; // 0=Seg … 6=Dom
+  const todosDe = (chave) =>
+    chave === 'torres' ? state.torres.map((t) => t.codigo) : chave === 'turnos' ? state.turnos.map((t) => t.codigo) : colabsBase().map((c) => c.nome);
   const est = {
-    colaboradorId: null,
     inicio: diasMes[0] || `${state.mes}-01`,
     fim: diasMes[diasMes.length - 1] || diasMes[0] || `${state.mes}-01`,
     ciclo: ['T', 'T', 'T', 'T', 'T', 'F', 'F'],
+    torres: null, // null = Todos
+    turnos: null,
+    colaboradores: null,
   };
   dialog.classList.add('larga');
   dialog.addEventListener('close', () => dialog.classList.remove('larga'), { once: true });
+
+  const alvo = () =>
+    colabsBase().filter(
+      (c) =>
+        (est.torres === null || est.torres.has(codigoDe(state.torres, c.torre_id))) &&
+        (est.turnos === null || est.turnos.has(codigoDe(state.turnos, c.turno_id))) &&
+        (est.colaboradores === null || est.colaboradores.has(c.nome))
+    );
+  const totalDias = () =>
+    est.inicio && est.fim && est.fim >= est.inicio
+      ? Math.round((Date.parse(`${est.fim}T00:00:00Z`) - Date.parse(`${est.inicio}T00:00:00Z`)) / 86400000) + 1
+      : 0;
+  const resumo = (chave) => (est[chave] === null ? 'Todos' : `${est[chave].size} de ${todosDe(chave).length}`);
+  const checklist = (chave, titulo, itens) => `
+    <details class="pt-filtro">
+      <summary>${esc(titulo)}: ${resumo(chave)}</summary>
+      <div class="pt-check-grade">
+        <label class="pt-todos"><input type="checkbox" data-pt-todos="${chave}" ${est[chave] === null ? 'checked' : ''}> Todos</label>
+        ${itens
+          .map(
+            ([valor, rotulo]) =>
+              `<label><input type="checkbox" data-pt-item="${chave}" value="${esc(valor)}" ${
+                est[chave] === null || est[chave].has(valor) ? 'checked' : ''
+              }> ${rotulo}</label>`
+          )
+          .join('')}
+      </div>
+    </details>`;
+
   dialogForm.onsubmit = (e) => e.preventDefault();
-
-  const pessoa = () => porId(colaboradores, est.colaboradorId);
-
-  // Linhas do intervalo [início, fim]: para cada dia, T = turno da pessoa, F = folga, pelo índice no ciclo.
-  const linhasPreview = () => {
-    const c = pessoa();
-    if (!c || !est.inicio || !est.fim || est.fim < est.inicio) return [];
-    const total = Math.round((Date.parse(`${est.fim}T00:00:00Z`) - Date.parse(`${est.inicio}T00:00:00Z`)) / 86400000) + 1;
-    if (total < 1 || total > 370) return [];
-    const turno = porId(state.turnos, c.turno_id);
-    return Array.from({ length: total }, (_, i) => {
-      const trabalho = (est.ciclo[i % est.ciclo.length] || 'F') === 'T';
-      return { data: somarDias(est.inicio, i), trabalho, turno };
-    });
-  };
-
   const render = () => {
-    const c = pessoa();
-    const linhas = linhasPreview();
+    const matched = alvo();
+    const comTurno = matched.filter((c) => c.turno_id);
+    const semTurno = matched.length - comTurno.length;
+    const dias = totalDias();
     dialogForm.innerHTML = `
-      <header><h2>Repetir padrão</h2></header>
+      <header><h2>Padrão de trabalho</h2></header>
       <div class="body">
-        <label class="field"><span>Colaborador *</span><select data-rp-colab>
-          <option value="">Selecione…</option>
-          ${colaboradores.map((x) => `<option value="${x.id}" ${x.id === est.colaboradorId ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}
-        </select></label>
-        ${c && !c.turno_id ? '<p class="form-error">Esse colaborador não tem turno cadastrado — os dias de trabalho ficariam sem turno.</p>' : ''}
         <div class="row">
-          <label class="field"><span>Início *</span><input type="date" data-rp-inicio value="${est.inicio}"></label>
-          <label class="field"><span>Fim *</span><input type="date" data-rp-fim value="${est.fim}"></label>
+          <label class="field"><span>De *</span><input type="date" data-pt-inicio value="${est.inicio}"></label>
+          <label class="field"><span>Até *</span><input type="date" data-pt-fim value="${est.fim}"></label>
         </div>
         <div class="rp-presets">
-          <span class="muted">Padrão personalizado — presets:</span>
-          <button type="button" class="ghost" data-rp-preset="TC">TC (seg–sex trabalho, sáb/dom folga)</button>
-          <button type="button" class="ghost" data-rp-preset="TP">TP (1 dia sim, 1 não)</button>
+          <span class="muted">Amostra (seg a dom):</span>
+          <button type="button" class="ghost" data-pt-preset="TC">TC</button>
+          <button type="button" class="ghost" data-pt-preset="TP">TP</button>
         </div>
-        <label class="field"><span>Dias do ciclo</span><input type="number" data-rp-dias min="1" max="31" value="${est.ciclo.length}"></label>
-        <div class="rp-ciclo" data-rp-grade>${est.ciclo
-          .map(
-            (t, i) =>
-              `<button type="button" class="rp-dia ${t === 'T' ? 'pos' : 'neg'}" data-rp-dia="${i}">${i + 1}<br>${t === 'T' ? 'Trab.' : 'Folga'}</button>`
-          )
-          .join('')}</div>
-        <p class="hint">Clique num dia do ciclo pra alternar entre trabalho e folga. Clique num preset de novo se mudar a data de início.</p>
-        ${
-          linhas.length
-            ? `<div class="rp-preview"><p class="muted">${linhas.length} dia(s) serão aplicados a ${esc(c.nome)}:</p>
-                <ul class="rp-preview-lista">${linhas
-                  .map(
-                    (l) =>
-                      `<li><span class="muted">${SEMANA_ABREV[diaSemana(l.data)]} ${l.data.split('-').reverse().join('/')}</span> <strong class="${
-                        l.trabalho ? 'pos' : 'neg'
-                      }">${l.trabalho ? (l.turno ? `${l.turno.codigo} · ${horarioDoTurno(l.turno)}` : 'Trabalho (sem turno)') : 'Folga'}</strong></li>`
-                  )
-                  .join('')}</ul></div>`
-            : '<p class="muted vazio">Escolha o colaborador e o intervalo para ver a prévia.</p>'
-        }
-        <p class="form-error" data-rp-erro></p>
+        <div class="rp-ciclo">${DIAS_SEMANA.map(
+          (rot, i) =>
+            `<button type="button" class="rp-dia ${est.ciclo[i] === 'T' ? 'pos' : 'neg'}" data-pt-dia="${i}">${rot}<br>${
+              est.ciclo[i] === 'T' ? 'Trab.' : 'Folga'
+            }</button>`
+        ).join('')}</div>
+        <p class="hint">Clique num dia pra alternar entre trabalho e folga. Cada colaborador usa o próprio turno nos dias de trabalho.</p>
+        ${checklist('torres', 'Torre', state.torres.map((t) => [t.codigo, tagTorre(t)]))}
+        ${checklist('turnos', 'Turno', state.turnos.map((t) => [t.codigo, tagTurno(t)]))}
+        ${checklist('colaboradores', 'Colaboradores', colabsBase().map((c) => [c.nome, esc(c.nome)]))}
+        <p class="muted">${matched.length} colaborador(es) selecionado(s) · ${dias} dia(s) no período${
+          semTurno ? ` · ${semTurno} sem turno (serão ignorados)` : ''
+        }</p>
+        <p class="form-error" data-pt-erro></p>
       </div>
-      <footer><button type="button" data-cancel>Cancelar</button><button type="button" class="primary" data-rp-aplicar ${
-        linhas.length ? '' : 'disabled'
+      <footer><button type="button" data-cancel>Cancelar</button><button type="button" class="primary" data-pt-aplicar ${
+        comTurno.length && dias ? '' : 'disabled'
       }>Aplicar</button></footer>`;
 
     $('[data-cancel]', dialogForm).onclick = () => dialog.close();
-    $('[data-rp-colab]', dialogForm).onchange = (e) => {
-      est.colaboradorId = e.target.value ? Number(e.target.value) : null;
-      render();
-    };
-    $('[data-rp-inicio]', dialogForm).onchange = (e) => {
+    $('[data-pt-inicio]', dialogForm).onchange = (e) => {
       est.inicio = e.target.value;
       render();
     };
-    $('[data-rp-fim]', dialogForm).onchange = (e) => {
+    $('[data-pt-fim]', dialogForm).onchange = (e) => {
       est.fim = e.target.value;
       render();
     };
-    $('[data-rp-dias]', dialogForm).onchange = (e) => {
-      const n = Math.max(1, Math.min(31, Math.floor(Number(e.target.value)) || 1));
-      est.ciclo = Array.from({ length: n }, (_, i) => est.ciclo[i] || 'T');
-      render();
-    };
-    dialogForm.querySelectorAll('[data-rp-dia]').forEach((btn) => {
+    dialogForm.querySelectorAll('[data-pt-dia]').forEach((btn) => {
       btn.onclick = () => {
-        const i = Number(btn.dataset.rpDia);
+        const i = Number(btn.dataset.ptDia);
         est.ciclo[i] = est.ciclo[i] === 'T' ? 'F' : 'T';
         render();
       };
     });
-    dialogForm.querySelectorAll('[data-rp-preset]').forEach((btn) => {
+    dialogForm.querySelectorAll('[data-pt-preset]').forEach((btn) => {
       btn.onclick = () => {
-        if (btn.dataset.rpPreset === 'TP') {
-          est.ciclo = ['T', 'F'];
-        } else {
-          const w = est.inicio ? diaSemana(est.inicio) : 1;
-          est.ciclo = Array.from({ length: 7 }, (_, i) => ((w + i) % 7 === 0 || (w + i) % 7 === 6 ? 'F' : 'T'));
-        }
+        est.ciclo = btn.dataset.ptPreset === 'TP' ? ['T', 'F', 'T', 'F', 'T', 'F', 'T'] : ['T', 'T', 'T', 'T', 'T', 'F', 'F'];
         render();
       };
     });
-    $('[data-rp-aplicar]', dialogForm).onclick = async () => {
-      const erroEl = dialogForm.querySelector('[data-rp-erro]');
+    dialogForm.onchange = (e) => {
+      const chaveTodos = e.target.dataset.ptTodos;
+      const chaveItem = e.target.dataset.ptItem;
+      if (chaveTodos) {
+        est[chaveTodos] = e.target.checked ? null : new Set();
+        render();
+      } else if (chaveItem) {
+        const atual = est[chaveItem] === null ? new Set(todosDe(chaveItem)) : new Set(est[chaveItem]);
+        if (e.target.checked) atual.add(e.target.value);
+        else atual.delete(e.target.value);
+        est[chaveItem] = atual.size === todosDe(chaveItem).length ? null : atual;
+        render();
+      }
+    };
+    $('[data-pt-aplicar]', dialogForm).onclick = async () => {
+      const erroEl = dialogForm.querySelector('[data-pt-erro]');
       erroEl.textContent = '';
-      const c = pessoa();
-      const linhas = linhasPreview();
-      if (!c || !linhas.length) {
-        erroEl.textContent = 'Escolha o colaborador e um intervalo válido.';
+      const comTurno = alvo().filter((c) => c.turno_id);
+      const dias = totalDias();
+      if (!comTurno.length || !dias) {
+        erroEl.textContent = 'Ajuste o período e os filtros.';
         return;
       }
-      if (linhas.some((l) => l.trabalho) && !c.turno_id) {
-        erroEl.textContent = 'Esse colaborador não tem turno cadastrado.';
+      if (!confirm(`Aplicar o padrão a ${comTurno.length} colaborador(es), ${dias} dia(s) (${comTurno.length * dias} lançamentos)? Isso substitui o que já estiver lançado nesses dias.`))
         return;
+      const celulas = [];
+      for (const c of comTurno) {
+        for (let i = 0; i < dias; i++) {
+          const data = somarDias(est.inicio, i);
+          const trabalho = est.ciclo[idxSemana(data)] === 'T';
+          celulas.push({ colaborador_id: c.id, data, tipo: trabalho ? 'TURNO' : 'FOLGA', turno_id: trabalho ? c.turno_id : null });
+        }
       }
-      if (!confirm(`Aplicar o padrão a ${linhas.length} dia(s) de ${c.nome}? Isso substitui o que já estiver lançado nesses dias.`)) return;
-      const celulas = linhas.map((l) => ({
-        colaborador_id: c.id,
-        data: l.data,
-        tipo: l.trabalho ? 'TURNO' : 'FOLGA',
-        turno_id: l.trabalho ? c.turno_id : null,
-      }));
       try {
         await api('PUT', '/escala/lote', { celulas });
         await carregarEscala();
         dialog.close();
-        toast(`Padrão aplicado a ${linhas.length} dia(s).`);
+        toast(`Padrão aplicado a ${comTurno.length} colaborador(es).`);
       } catch (err) {
         erroEl.textContent = err.message;
       }
@@ -1245,6 +1252,7 @@ function dialogRepetirPadrao() {
   render();
   dialog.showModal();
 }
+
 
 // ----- prévia da série: esmaece na linha os dias que o clique vai preencher -----
 let celulaPrevia = null;
