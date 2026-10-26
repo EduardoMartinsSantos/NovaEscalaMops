@@ -105,6 +105,9 @@ const state = {
   padraoTrabIni: lerPreferencia('padraoTrabIni', ''),
   padraoTrabFim: lerPreferencia('padraoTrabFim', ''),
   padraoTrabCiclo: lerPreferencia('padraoTrabCiclo', 'T,T,T,T,T,F,F'),
+  // 'semana' (TC): ciclo alinhado ao dia da semana, entre "De" e "Até". 'serie' (TP): ciclo corrido a partir
+  // do dia clicado na escala, sem olhar o dia da semana, até a "Data limite".
+  padraoTrabModo: lerPreferencia('padraoTrabModo', 'semana'),
   filtroColab: { busca: '' },
   filtrosColab: {}, // filtros por coluna da tela de colaboradores (chave → Set de valores permitidos)
   selecionados: new Set(), // ids marcados na lista de colaboradores
@@ -991,9 +994,11 @@ function renderLegenda() {
       'PADRAO_TRAB',
       '<span class="chip sa-chip">↻</span>',
       'Padrão de trabalho',
-      state.padraoTrabIni
-        ? `${state.padraoTrabIni.split('-').reverse().join('/')} a ${state.padraoTrabFim.split('-').reverse().join('/')} — clique numa linha pra aplicar`
-        : 'Configure o período (⚙) e clique numa linha da escala pra aplicar'
+      !state.padraoTrabFim
+        ? 'Configure o padrão (⚙) e clique numa linha da escala pra aplicar'
+        : state.padraoTrabModo === 'serie'
+          ? `Série até ${state.padraoTrabFim.split('-').reverse().join('/')} — clique num dia pra começar`
+          : `${state.padraoTrabIni.split('-').reverse().join('/')} a ${state.padraoTrabFim.split('-').reverse().join('/')} — clique numa linha pra aplicar`
     )}<button class="serie-cfg" id="cfg-padrao-trab" title="Configurar o padrão de trabalho" aria-label="Configurar o padrão de trabalho">⚙</button></span>` +
     (state.pincel !== null ? `<span class="label" style="margin-left:8px">Pincel ativo — Esc para sair</span>` : '');
   el.onclick = (e) => {
@@ -1162,26 +1167,42 @@ function dialogPadraoTrabalho() {
     confirmar: 'Usar este padrão',
     corpo: `
       <div class="row">
-        <label class="field"><span>De *</span><input type="date" name="inicio" required value="${inicio}"></label>
-        <label class="field"><span>Até *</span><input type="date" name="fim" required value="${fim}"></label>
+        <label class="field" data-campo-de><span>De *</span><input type="date" name="inicio" value="${inicio}"></label>
+        <label class="field"><span data-rotulo-fim>Até *</span><input type="date" name="fim" required value="${fim}"></label>
       </div>
       <input type="hidden" name="ciclo" value="${state.padraoTrabCiclo}">
+      <input type="hidden" name="modo" value="${state.padraoTrabModo}">
       <div class="rp-presets">
-        <span class="muted">Amostra (seg a dom):</span>
+        <span class="muted">Padrão:</span>
         <button type="button" class="ghost" data-preset="TC">TC</button>
         <button type="button" class="ghost" data-preset="TP">TP</button>
       </div>
+      <p class="hint" data-dica></p>
       <div class="rp-ciclo" data-grade></div>`,
     aoAbrir(form) {
       const oculto = form.elements.ciclo;
+      const modoOculto = form.elements.modo;
       const grade = form.querySelector('[data-grade]');
+      const campoDe = form.querySelector('[data-campo-de]');
+      const rotuloFim = form.querySelector('[data-rotulo-fim]');
+      const dica = form.querySelector('[data-dica]');
       const sync = () => {
+        const serie = modoOculto.value === 'serie';
+        campoDe.hidden = serie;
+        form.elements.inicio.required = !serie;
+        rotuloFim.textContent = serie ? 'Data limite *' : 'Até *';
+        dica.textContent = serie
+          ? 'Clique numa célula da escala: o ciclo começa ali e se repete todo dia até a data limite, sem olhar o dia da semana.'
+          : 'Alinhado ao dia da semana, entre "De" e "Até".';
         const ciclo = oculto.value.split(',');
-        grade.innerHTML = DIAS_SEMANA_PT.map(
-          (rot, i) => `<button type="button" class="rp-dia ${ciclo[i] === 'T' ? 'pos' : 'neg'}" data-dia="${i}">${rot}<br>${
-            ciclo[i] === 'T' ? 'Trab.' : 'Folga'
-          }</button>`
-        ).join('');
+        grade.innerHTML = ciclo
+          .map(
+            (t, i) =>
+              `<button type="button" class="rp-dia ${t === 'T' ? 'pos' : 'neg'}" data-dia="${i}">${
+                serie ? `Dia ${i + 1}` : DIAS_SEMANA_PT[i]
+              }<br>${t === 'T' ? 'Trab.' : 'Folga'}</button>`
+          )
+          .join('');
       };
       grade.onclick = (e) => {
         const btn = e.target.closest('[data-dia]');
@@ -1194,22 +1215,27 @@ function dialogPadraoTrabalho() {
       };
       form.querySelectorAll('[data-preset]').forEach((btn) => {
         btn.onclick = () => {
-          oculto.value = (btn.dataset.preset === 'TP' ? ['T', 'F', 'T', 'F', 'T', 'F', 'T'] : ['T', 'T', 'T', 'T', 'T', 'F', 'F']).join(',');
+          modoOculto.value = btn.dataset.preset === 'TP' ? 'serie' : 'semana';
+          oculto.value = (btn.dataset.preset === 'TP' ? ['T', 'F'] : ['T', 'T', 'T', 'T', 'T', 'F', 'F']).join(',');
           sync();
         };
       });
       sync();
     },
     async onSubmit(form) {
+      const modo = form.elements.modo.value;
       const ini = valor(form, 'inicio');
       const fimV = valor(form, 'fim');
-      if (!ini || !fimV || fimV < ini) throw new Error('Informe um período válido (Até não pode ser antes de De).');
-      state.padraoTrabIni = ini;
+      if (!fimV) throw new Error(modo === 'serie' ? 'Informe a data limite.' : 'Informe um período válido.');
+      if (modo === 'semana' && (!ini || fimV < ini)) throw new Error('Informe um período válido (Até não pode ser antes de De).');
+      state.padraoTrabIni = modo === 'serie' ? '' : ini;
       state.padraoTrabFim = fimV;
       state.padraoTrabCiclo = valor(form, 'ciclo');
-      salvarPreferencia('padraoTrabIni', ini);
+      state.padraoTrabModo = modo;
+      salvarPreferencia('padraoTrabIni', state.padraoTrabIni);
       salvarPreferencia('padraoTrabFim', fimV);
       salvarPreferencia('padraoTrabCiclo', state.padraoTrabCiclo);
+      salvarPreferencia('padraoTrabModo', modo);
       state.pincel = 'PADRAO_TRAB';
       limparPrevia();
       renderLegenda();
@@ -1217,14 +1243,16 @@ function dialogPadraoTrabalho() {
   });
 }
 
-// Aplica o padrão semanal configurado a um colaborador: alinha o ciclo (seg..dom) às datas reais do período.
-// Aplica na hora (otimista, como os outros pincéis) e manda pro servidor em segundo plano; erro desfaz e
-// recarrega. `jaFeitas` evita reaplicar a mesma linha várias vezes no mesmo arraste (um mouseover por célula).
-async function aplicarPadraoTrabalho(colaboradorId, jaFeitas) {
+// Aplica o padrão configurado a um colaborador. Modo "semana" (TC): ciclo alinhado ao dia da semana, entre
+// "De" e "Até". Modo "serie" (TP): ciclo corrido a partir de `dataClicada`, sem olhar o dia da semana, até a
+// data limite. Aplica na hora (otimista) e manda pro servidor em segundo plano; erro desfaz e recarrega.
+// `jaFeitas` evita reaplicar a mesma linha várias vezes no mesmo arraste (um mouseover por célula).
+async function aplicarPadraoTrabalho(colaboradorId, dataClicada, jaFeitas) {
   if (jaFeitas?.has(colaboradorId)) return;
   jaFeitas?.add(colaboradorId);
   const c = porId(state.colaboradores, colaboradorId);
-  const ini = state.padraoTrabIni;
+  const serie = state.padraoTrabModo === 'serie';
+  const ini = serie ? dataClicada : state.padraoTrabIni;
   const fim = state.padraoTrabFim;
   if (!c || !ini || !fim || fim < ini) return;
   if (!c.turno_id) {
@@ -1236,7 +1264,7 @@ async function aplicarPadraoTrabalho(colaboradorId, jaFeitas) {
   if (dias < 1 || dias > 370) return;
   const celulas = Array.from({ length: dias }, (_, i) => {
     const data = somarDias(ini, i);
-    const trabalho = ciclo[(diaSemana(data) + 6) % 7] === 'T';
+    const trabalho = (serie ? ciclo[i % ciclo.length] : ciclo[(diaSemana(data) + 6) % 7]) === 'T';
     return { colaborador_id: c.id, data, tipo: trabalho ? 'TURNO' : 'FOLGA', turno_id: trabalho ? c.turno_id : null };
   });
   // Atualização otimista: pinta na hora, igual aos outros pincéis; o PUT roda em segundo plano.
@@ -1356,7 +1384,7 @@ const horasPontuais = () => lerSerie(state.serieSA).find((h) => h !== null) ?? 8
 // (no sobreaviso, Folga/Férias marcam o dia no lugar das horas e Limpar apaga).
 function pintar(td) {
   if (td.matches('td.cell')) {
-    if (state.pincel === 'PADRAO_TRAB') aplicarPadraoTrabalho(Number(td.dataset.c), linhasPadraoDrag);
+    if (state.pincel === 'PADRAO_TRAB') aplicarPadraoTrabalho(Number(td.dataset.c), td.dataset.d, linhasPadraoDrag);
     else if (state.pincel !== 'SA') aplicarCelula(Number(td.dataset.c), td.dataset.d, state.pincel);
     return;
   }
@@ -1428,8 +1456,8 @@ function ligarEventosGrade() {
     if (!podeEditarEscala()) return;
     const td = alvo(e);
     if (!td || state.pincel === null || aplicaNoClique() || e.button !== 0) return;
-    if (state.pincel === 'PADRAO_TRAB' && !state.padraoTrabIni) {
-      toast('Configure o período no ⚙ antes de aplicar.', true);
+    if (state.pincel === 'PADRAO_TRAB' && !state.padraoTrabFim) {
+      toast('Configure o padrão no ⚙ antes de aplicar.', true);
       return;
     }
     linhasPadraoDrag.clear();
