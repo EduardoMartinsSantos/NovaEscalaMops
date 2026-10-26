@@ -442,7 +442,9 @@ function passaFiltroEscala(c, ignorar) {
 }
 
 function colaboradoresVisiveis() {
-  return state.colaboradores.filter((c) => c.ativo && c.na_escala && passaFiltroEscala(c));
+  return state.colaboradores.filter(
+    (c) => c.ativo && c.na_escala && (!c.mes_inicio || c.mes_inicio <= state.mes) && passaFiltroEscala(c)
+  );
 }
 
 // ----- Exportar Excel: mesma visualização da tela (grupos, filtros, cores, 12x36 e sobreaviso) -----
@@ -1975,6 +1977,7 @@ const COLUNAS_COLAB = {
   nome: { rotulo: 'Nome', valor: (c) => c.nome },
   email: { rotulo: 'E-mail', valor: (c) => c.email || '' },
   telefone: { rotulo: 'Telefone', valor: (c) => c.telefone || '' },
+  mes_inicio: { rotulo: 'Mês início', titulo: 'A partir de qual mês aparece na escala', valor: (c) => c.mes_inicio || '' },
   torre: COLUNAS_ESCALA.torre,
   turno: COLUNAS_ESCALA.turno,
   turno_fds: {
@@ -2172,7 +2175,7 @@ function exportarColaboradores() {
   const lista = colaboradoresFiltrados();
   if (!lista.length) return toast('Nenhum colaborador para exportar.', true);
   const chaves = Object.keys(COLUNAS_COLAB);
-  const larguras = { nome: 38, email: 40, telefone: 18 };
+  const larguras = { nome: 38, email: 40, telefone: 18, mes_inicio: 14 };
   const blob = criarXlsx({
     aba: 'Colaboradores',
     colunas: chaves.map((k) => ({ largura: larguras[k] || 13 })),
@@ -2262,6 +2265,7 @@ function linhaColaborador(c, torresSA, travado) {
     ${celulaTexto(c, 'nome', 'w-nome', 'text', travado)}
     ${celulaTexto(c, 'email', 'w-email', 'email', travado)}
     ${celulaTexto(c, 'telefone', 'w-tel', 'tel', travado)}
+    ${celulaTexto(c, 'mes_inicio', 'w-mes-inicio', 'month', travado)}
     ${celulaSelect(c, 'torre_id', torresReais(), (t) => t.codigo, undefined, travado)}
     ${celulaSelect(c, 'turno_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`, undefined, travado)}
     ${celulaFds(c, travado)}
@@ -2299,7 +2303,7 @@ function renderColaboradores() {
       <th class="sel"><input type="checkbox" id="sel-todos" title="Selecionar todos os exibidos" ${
         marcadosVisiveis === lista.length ? 'checked' : ''
       }></th>
-      ${['nome', 'email', 'telefone', 'torre', 'turno', 'turno_fds', 'mesa', 'contrato', 'sobreaviso', 'ativo', 'na_escala']
+      ${['nome', 'email', 'telefone', 'mes_inicio', 'torre', 'turno', 'turno_fds', 'mesa', 'contrato', 'sobreaviso', 'ativo', 'na_escala']
         .map(thFiltroColab)
         .join('')}${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
     </tr></thead><tbody>${lista
@@ -2549,6 +2553,9 @@ function formColaborador(c = null) {
         <label class="field"><span>Telefone</span><input name="telefone" type="tel" maxlength="30" placeholder="(11) 99999-9999" value="${esc(c?.telefone)}"></label>
       </div>
       <div class="row">
+        <label class="field"><span>Mês início</span><input name="mes_inicio" type="month" value="${esc(c?.mes_inicio)}" title="A partir de qual mês aparece na escala; vazio = sem restrição"></label>
+      </div>
+      <div class="row">
         <label class="field"><span>Torre *</span><select name="torre_id" required>${opcoes(
           torresReais(),
           c?.torre_id,
@@ -2596,6 +2603,7 @@ function formColaborador(c = null) {
         nome: valor(form, 'nome'),
         email: valor(form, 'email'),
         telefone: valor(form, 'telefone'),
+        mes_inicio: valor(form, 'mes_inicio'),
         torre_id: valor(form, 'torre_id'),
         turno_id: valor(form, 'turno_id'),
         turno_fds_id: valor(form, 'turno_fds_id'),
