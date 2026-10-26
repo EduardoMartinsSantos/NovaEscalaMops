@@ -101,6 +101,10 @@ const state = {
   colunasOcultas: new Set(lerPreferencia('colunasOcultas', '').split(',').filter(Boolean)),
   // Série do pincel Sobreaviso (configurável, guardada no navegador). 1 dia = lançamento pontual.
   serieSA: lerPreferencia('serieSA', lerPreferencia('horasSA', '8')),
+  // Pincel "Padrão de trabalho": período + padrão semanal (seg..dom), configurado no ⚙ e guardado no navegador.
+  padraoTrabIni: lerPreferencia('padraoTrabIni', ''),
+  padraoTrabFim: lerPreferencia('padraoTrabFim', ''),
+  padraoTrabCiclo: lerPreferencia('padraoTrabCiclo', 'T,T,T,T,T,F,F'),
   filtroColab: { busca: '' },
   filtrosColab: {}, // filtros por coluna da tela de colaboradores (chave → Set de valores permitidos)
   selecionados: new Set(), // ids marcados na lista de colaboradores
@@ -943,10 +947,18 @@ function renderLegenda() {
         item('SERIE', '<span class="chip sa-chip">⇶</span>', 'Série fixa', fixas)
       : '') +
     `<span class="legend-sep"></span>` +
-    `<button class="ghost" id="padrao-trabalho" title="Aplicar um padrão de trabalho/folga a vários colaboradores de uma vez">↻ Padrão de trabalho</button>` +
+    // Padrão de trabalho: o pincel e a configuração (⚙) num só botão dividido, igual à Série variável.
+    `<span class="grupo-pincel">${item(
+      'PADRAO_TRAB',
+      '<span class="chip sa-chip">↻</span>',
+      'Padrão de trabalho',
+      state.padraoTrabIni
+        ? `${state.padraoTrabIni.split('-').reverse().join('/')} a ${state.padraoTrabFim.split('-').reverse().join('/')} — clique numa linha pra aplicar`
+        : 'Configure o período (⚙) e clique numa linha da escala pra aplicar'
+    )}<button class="serie-cfg" id="cfg-padrao-trab" title="Configurar o padrão de trabalho" aria-label="Configurar o padrão de trabalho">⚙</button></span>` +
     (state.pincel !== null ? `<span class="label" style="margin-left:8px">Pincel ativo — Esc para sair</span>` : '');
   el.onclick = (e) => {
-    if (e.target.closest('#padrao-trabalho')) return dialogPadraoTrabalho();
+    if (e.target.closest('#cfg-padrao-trab')) return dialogPadraoTrabalho();
     if (e.target.closest('#cfg-serie-sa')) return dialogSerieSA();
     const b = e.target.closest('button[data-pincel]');
     if (!b) return;
@@ -1099,158 +1111,98 @@ function dialogSerieSA() {
   });
 }
 
-// "Padrão de trabalho": aplica um padrão semanal (seg a dom) de trabalho/folga a vários colaboradores
-// de uma vez, filtrando por torre/turno/colaborador (ou "Todos"), num período de datas.
+// Configura o pincel "Padrão de trabalho": período e o padrão semanal (seg a dom). Clicar em "Usar este
+// padrão" salva e arma o pincel; aplicar é clicar numa linha da escala (o padrão é alinhado às datas reais).
+const DIAS_SEMANA_PT = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 function dialogPadraoTrabalho() {
-  const colabsBase = () => state.colaboradores.filter((c) => c.ativo && c.na_escala);
   const diasMes = state.escala?.dias || [];
-  const DIAS_SEMANA = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-  const idxSemana = (data) => (diaSemana(data) + 6) % 7; // 0=Seg … 6=Dom
-  const todosDe = (chave) =>
-    chave === 'torres' ? state.torres.map((t) => t.codigo) : chave === 'turnos' ? state.turnos.map((t) => t.codigo) : colabsBase().map((c) => c.nome);
-  const est = {
-    inicio: diasMes[0] || `${state.mes}-01`,
-    fim: diasMes[diasMes.length - 1] || diasMes[0] || `${state.mes}-01`,
-    ciclo: ['T', 'T', 'T', 'T', 'T', 'F', 'F'],
-    torres: null, // null = Todos
-    turnos: null,
-    colaboradores: null,
-  };
-  dialog.classList.add('larga');
-  dialog.addEventListener('close', () => dialog.classList.remove('larga'), { once: true });
-
-  const alvo = () =>
-    colabsBase().filter(
-      (c) =>
-        (est.torres === null || est.torres.has(codigoDe(state.torres, c.torre_id))) &&
-        (est.turnos === null || est.turnos.has(codigoDe(state.turnos, c.turno_id))) &&
-        (est.colaboradores === null || est.colaboradores.has(c.nome))
-    );
-  const totalDias = () =>
-    est.inicio && est.fim && est.fim >= est.inicio
-      ? Math.round((Date.parse(`${est.fim}T00:00:00Z`) - Date.parse(`${est.inicio}T00:00:00Z`)) / 86400000) + 1
-      : 0;
-  const resumo = (chave) => (est[chave] === null ? 'Todos' : `${est[chave].size} de ${todosDe(chave).length}`);
-  const checklist = (chave, titulo, itens) => `
-    <details class="pt-filtro">
-      <summary>${esc(titulo)}: ${resumo(chave)}</summary>
-      <div class="pt-check-grade">
-        <label class="pt-todos"><input type="checkbox" data-pt-todos="${chave}" ${est[chave] === null ? 'checked' : ''}> Todos</label>
-        ${itens
-          .map(
-            ([valor, rotulo]) =>
-              `<label><input type="checkbox" data-pt-item="${chave}" value="${esc(valor)}" ${
-                est[chave] === null || est[chave].has(valor) ? 'checked' : ''
-              }> ${rotulo}</label>`
-          )
-          .join('')}
+  const inicio = state.padraoTrabIni || diasMes[0] || `${state.mes}-01`;
+  const fim = state.padraoTrabFim || diasMes[diasMes.length - 1] || diasMes[0] || `${state.mes}-01`;
+  abrirDialog({
+    titulo: 'Padrão de trabalho',
+    confirmar: 'Usar este padrão',
+    corpo: `
+      <div class="row">
+        <label class="field"><span>De *</span><input type="date" name="inicio" required value="${inicio}"></label>
+        <label class="field"><span>Até *</span><input type="date" name="fim" required value="${fim}"></label>
       </div>
-    </details>`;
-
-  dialogForm.onsubmit = (e) => e.preventDefault();
-  const render = () => {
-    const matched = alvo();
-    const comTurno = matched.filter((c) => c.turno_id);
-    const semTurno = matched.length - comTurno.length;
-    const dias = totalDias();
-    dialogForm.innerHTML = `
-      <header><h2>Padrão de trabalho</h2></header>
-      <div class="body">
-        <div class="row">
-          <label class="field"><span>De *</span><input type="date" data-pt-inicio value="${est.inicio}"></label>
-          <label class="field"><span>Até *</span><input type="date" data-pt-fim value="${est.fim}"></label>
-        </div>
-        <div class="rp-presets">
-          <span class="muted">Amostra (seg a dom):</span>
-          <button type="button" class="ghost" data-pt-preset="TC">TC</button>
-          <button type="button" class="ghost" data-pt-preset="TP">TP</button>
-        </div>
-        <div class="rp-ciclo">${DIAS_SEMANA.map(
-          (rot, i) =>
-            `<button type="button" class="rp-dia ${est.ciclo[i] === 'T' ? 'pos' : 'neg'}" data-pt-dia="${i}">${rot}<br>${
-              est.ciclo[i] === 'T' ? 'Trab.' : 'Folga'
-            }</button>`
-        ).join('')}</div>
-        <p class="hint">Clique num dia pra alternar entre trabalho e folga. Cada colaborador usa o próprio turno nos dias de trabalho.</p>
-        ${checklist('torres', 'Torre', state.torres.map((t) => [t.codigo, tagTorre(t)]))}
-        ${checklist('turnos', 'Turno', state.turnos.map((t) => [t.codigo, tagTurno(t)]))}
-        ${checklist('colaboradores', 'Colaboradores', colabsBase().map((c) => [c.nome, esc(c.nome)]))}
-        <p class="muted">${matched.length} colaborador(es) selecionado(s) · ${dias} dia(s) no período${
-          semTurno ? ` · ${semTurno} sem turno (serão ignorados)` : ''
-        }</p>
-        <p class="form-error" data-pt-erro></p>
+      <input type="hidden" name="ciclo" value="${state.padraoTrabCiclo}">
+      <div class="rp-presets">
+        <span class="muted">Amostra (seg a dom):</span>
+        <button type="button" class="ghost" data-preset="TC">TC</button>
+        <button type="button" class="ghost" data-preset="TP">TP</button>
       </div>
-      <footer><button type="button" data-cancel>Cancelar</button><button type="button" class="primary" data-pt-aplicar ${
-        comTurno.length && dias ? '' : 'disabled'
-      }>Aplicar</button></footer>`;
+      <div class="rp-ciclo" data-grade></div>`,
+    aoAbrir(form) {
+      const oculto = form.elements.ciclo;
+      const grade = form.querySelector('[data-grade]');
+      const sync = () => {
+        const ciclo = oculto.value.split(',');
+        grade.innerHTML = DIAS_SEMANA_PT.map(
+          (rot, i) => `<button type="button" class="rp-dia ${ciclo[i] === 'T' ? 'pos' : 'neg'}" data-dia="${i}">${rot}<br>${
+            ciclo[i] === 'T' ? 'Trab.' : 'Folga'
+          }</button>`
+        ).join('');
+      };
+      grade.onclick = (e) => {
+        const btn = e.target.closest('[data-dia]');
+        if (!btn) return;
+        const i = Number(btn.dataset.dia);
+        const ciclo = oculto.value.split(',');
+        ciclo[i] = ciclo[i] === 'T' ? 'F' : 'T';
+        oculto.value = ciclo.join(',');
+        sync();
+      };
+      form.querySelectorAll('[data-preset]').forEach((btn) => {
+        btn.onclick = () => {
+          oculto.value = (btn.dataset.preset === 'TP' ? ['T', 'F', 'T', 'F', 'T', 'F', 'T'] : ['T', 'T', 'T', 'T', 'T', 'F', 'F']).join(',');
+          sync();
+        };
+      });
+      sync();
+    },
+    async onSubmit(form) {
+      const ini = valor(form, 'inicio');
+      const fimV = valor(form, 'fim');
+      if (!ini || !fimV || fimV < ini) throw new Error('Informe um período válido (Até não pode ser antes de De).');
+      state.padraoTrabIni = ini;
+      state.padraoTrabFim = fimV;
+      state.padraoTrabCiclo = valor(form, 'ciclo');
+      salvarPreferencia('padraoTrabIni', ini);
+      salvarPreferencia('padraoTrabFim', fimV);
+      salvarPreferencia('padraoTrabCiclo', state.padraoTrabCiclo);
+      state.pincel = 'PADRAO_TRAB';
+      limparPrevia();
+      renderLegenda();
+    },
+  });
+}
 
-    $('[data-cancel]', dialogForm).onclick = () => dialog.close();
-    $('[data-pt-inicio]', dialogForm).onchange = (e) => {
-      est.inicio = e.target.value;
-      render();
-    };
-    $('[data-pt-fim]', dialogForm).onchange = (e) => {
-      est.fim = e.target.value;
-      render();
-    };
-    dialogForm.querySelectorAll('[data-pt-dia]').forEach((btn) => {
-      btn.onclick = () => {
-        const i = Number(btn.dataset.ptDia);
-        est.ciclo[i] = est.ciclo[i] === 'T' ? 'F' : 'T';
-        render();
-      };
-    });
-    dialogForm.querySelectorAll('[data-pt-preset]').forEach((btn) => {
-      btn.onclick = () => {
-        est.ciclo = btn.dataset.ptPreset === 'TP' ? ['T', 'F', 'T', 'F', 'T', 'F', 'T'] : ['T', 'T', 'T', 'T', 'T', 'F', 'F'];
-        render();
-      };
-    });
-    dialogForm.onchange = (e) => {
-      const chaveTodos = e.target.dataset.ptTodos;
-      const chaveItem = e.target.dataset.ptItem;
-      if (chaveTodos) {
-        est[chaveTodos] = e.target.checked ? null : new Set();
-        render();
-      } else if (chaveItem) {
-        const atual = est[chaveItem] === null ? new Set(todosDe(chaveItem)) : new Set(est[chaveItem]);
-        if (e.target.checked) atual.add(e.target.value);
-        else atual.delete(e.target.value);
-        est[chaveItem] = atual.size === todosDe(chaveItem).length ? null : atual;
-        render();
-      }
-    };
-    $('[data-pt-aplicar]', dialogForm).onclick = async () => {
-      const erroEl = dialogForm.querySelector('[data-pt-erro]');
-      erroEl.textContent = '';
-      const comTurno = alvo().filter((c) => c.turno_id);
-      const dias = totalDias();
-      if (!comTurno.length || !dias) {
-        erroEl.textContent = 'Ajuste o período e os filtros.';
-        return;
-      }
-      if (!confirm(`Aplicar o padrão a ${comTurno.length} colaborador(es), ${dias} dia(s) (${comTurno.length * dias} lançamentos)? Isso substitui o que já estiver lançado nesses dias.`))
-        return;
-      const celulas = [];
-      for (const c of comTurno) {
-        for (let i = 0; i < dias; i++) {
-          const data = somarDias(est.inicio, i);
-          const trabalho = est.ciclo[idxSemana(data)] === 'T';
-          celulas.push({ colaborador_id: c.id, data, tipo: trabalho ? 'TURNO' : 'FOLGA', turno_id: trabalho ? c.turno_id : null });
-        }
-      }
-      try {
-        await api('PUT', '/escala/lote', { celulas });
-        await carregarEscala();
-        dialog.close();
-        toast(`Padrão aplicado a ${comTurno.length} colaborador(es).`);
-      } catch (err) {
-        erroEl.textContent = err.message;
-      }
-    };
-  };
-  render();
-  dialog.showModal();
+// Aplica o padrão semanal configurado a um colaborador: alinha o ciclo (seg..dom) às datas reais do período.
+async function aplicarPadraoTrabalho(colaboradorId) {
+  const c = porId(state.colaboradores, colaboradorId);
+  const ini = state.padraoTrabIni;
+  const fim = state.padraoTrabFim;
+  if (!c || !ini || !fim || fim < ini) return;
+  if (!c.turno_id) {
+    toast(`${c.nome} não tem turno cadastrado.`, true);
+    return;
+  }
+  const ciclo = state.padraoTrabCiclo.split(',');
+  const dias = Math.round((Date.parse(`${fim}T00:00:00Z`) - Date.parse(`${ini}T00:00:00Z`)) / 86400000) + 1;
+  if (dias < 1 || dias > 370) return;
+  const celulas = Array.from({ length: dias }, (_, i) => {
+    const data = somarDias(ini, i);
+    const trabalho = ciclo[(diaSemana(data) + 6) % 7] === 'T';
+    return { colaborador_id: c.id, data, tipo: trabalho ? 'TURNO' : 'FOLGA', turno_id: trabalho ? c.turno_id : null };
+  });
+  try {
+    await api('PUT', '/escala/lote', { celulas });
+    await carregarEscala();
+    toast(`Padrão aplicado a ${c.nome} (${dias} dia(s)).`);
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 
@@ -1421,7 +1373,7 @@ function ligarEventosGrade() {
   wrap.addEventListener('mousedown', (e) => {
     if (!podeEditarEscala()) return;
     const td = alvo(e);
-    if (!td || state.pincel === null || aplicaNoClique() || e.button !== 0) return;
+    if (!td || state.pincel === null || state.pincel === 'PADRAO_TRAB' || aplicaNoClique() || e.button !== 0) return;
     e.preventDefault();
     pintando = true;
     pintar(td);
@@ -1524,6 +1476,15 @@ function ligarEventosGrade() {
       return renderGrade();
     }
     if (!podeEditarEscala()) return;
+    if (state.pincel === 'PADRAO_TRAB') {
+      if (!state.padraoTrabIni) {
+        toast('Configure o período no ⚙ antes de aplicar.', true);
+        return;
+      }
+      const tr = e.target.closest('tr[data-colab]');
+      if (tr) aplicarPadraoTrabalho(Number(tr.dataset.colab));
+      return;
+    }
     if (aplicaNoClique()) {
       const td = e.target.closest('td.sa-cell');
       if (!td) return;
