@@ -618,3 +618,10 @@ dialog.larga { width: min(640px, calc(100vw - 32px)); }
   .bh-novo { gap: 6px; }
   .bh-novo .field { flex-basis: 90px; }
 }
+
+/* Escala: indicadores rápidos no topo da página (dados reais, hoje) */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi-row .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.kpi-row .kpi .v { font-size: 22px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi-row .kpi .r { color: var(--muted); font-size: 12px; margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+.kpi-row .kpi .r i { width: 9px; height: 9px; border-radius: 3px; background: var(--c); flex: none; }

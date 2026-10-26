@@ -305,7 +305,7 @@ function viewEscala() {
   const f = state.filtro;
   main.innerHTML = `
     <div class="page-head">
-      <div><h1>Escala</h1><p id="escala-sub">${esc(textoSubEscala())}</p></div>
+      <div><h1>Escala de Equipe</h1><p id="escala-sub">${esc(textoSubEscala())}</p></div>
       <div class="head-actions" id="acoes-escala"></div>
       <div class="month-nav">
         <button class="icon" id="mes-ant" title="Mês anterior">‹</button>
@@ -314,6 +314,7 @@ function viewEscala() {
         <button id="mes-hoje">Hoje</button>
       </div>
     </div>
+    <div class="kpi-row" id="kpis-escala"></div>
     <div class="toolbar">
       <input id="f-busca" type="search" placeholder="Buscar colaborador…" value="${esc(f.busca)}">
       <button class="ghost" id="limpar-filtros-escala" title="Remover os filtros das colunas" hidden>✕ Limpar filtros</button>
@@ -940,6 +941,27 @@ function renderGrade() {
   const ordemPadrao = $('#ordem-padrao');
   if (ordemPadrao) ordemPadrao.hidden = !podeEditarEscala() || !state.colaboradores.some((c) => c.ordem_escala != null);
   wrap.classList.toggle('somente-leitura', !podeEditarEscala());
+  renderKpisEscala(cel, hoje);
+}
+
+// Indicadores rápidos da equipe (dados reais, hoje): não dependem dos filtros da tabela.
+function renderKpisEscala(cel, hoje) {
+  const el = $('#kpis-escala');
+  if (!el) return;
+  const equipe = state.colaboradores.filter((c) => c.ativo && c.na_escala);
+  const situacao = (c) => cel.get(`${c.id}|${hoje}`)?.tipo || 'FOLGA';
+  const emServico = equipe.filter((c) => situacao(c) === 'TURNO').length;
+  const folga = equipe.length - emServico;
+  const semCobertura = state.turnos.filter(
+    (t) => t.ativo && t.padrao !== '12x36' && equipe.some((c) => c.turno_id === t.id) && !equipe.some((c) => c.turno_id === t.id && situacao(c) === 'TURNO')
+  ).length;
+  const kpi = (valor, rotulo, cor) => `<div class="kpi" style="--c:${cor}"><div class="v">${valor}</div><div class="r"><i></i>${esc(rotulo)}</div></div>`;
+  el.innerHTML =
+    kpi(equipe.length, 'Colaboradores', '#9ca3af') +
+    kpi(emServico, 'Em serviço hoje', '#3fa35b') +
+    kpi(folga, 'De folga hoje', '#d9534f') +
+    kpi(semCobertura, 'Turnos sem ninguém hoje', '#d9a520') +
+    kpi(podeEditarEscala() ? 'Editando' : 'Travada', 'Modo', '#2563eb');
 }
 
 // Só admins lançam na escala e no sobreaviso; os demais veem em modo leitura.
