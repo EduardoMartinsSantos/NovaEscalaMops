@@ -313,7 +313,6 @@ function viewEscala() {
       <input id="f-busca" type="search" placeholder="Buscar colaborador…" value="${esc(f.busca)}">
       <button class="ghost" id="limpar-filtros-escala" title="Remover os filtros das colunas" hidden>✕ Limpar filtros</button>
       <button class="ghost" id="ordem-padrao" title="Voltar as linhas para a ordem automática (torre/turno e nome)" hidden>↺ Ordem padrão</button>
-      <button class="ghost" id="repetir-padrao" title="Repetir um padrão de trabalho/folga num intervalo de dias" hidden>↻ Repetir padrão</button>
       <div class="segmented" id="agrupar" role="group" aria-label="Agrupar por">
         <span>Agrupar por</span>
         <button data-g="turno" class="${state.agrupar === 'turno' ? 'active' : ''}">Turno</button>
@@ -330,7 +329,6 @@ function viewEscala() {
   $('#mes-ant').onclick = () => trocarMes(somarMes(state.mes, -1));
   $('#mes-prox').onclick = () => trocarMes(somarMes(state.mes, 1));
   $('#mes-hoje').onclick = () => trocarMes(mesAtual());
-  $('#repetir-padrao').onclick = () => dialogRepetirPadrao();
   $('#ordem-padrao').onclick = async () => {
     if (!confirm('Voltar todas as linhas da escala para a ordem automática? A ordem definida arrastando será perdida.')) return;
     try {
@@ -895,8 +893,6 @@ function renderGrade() {
   if (limpar) limpar.hidden = !Object.keys(state.filtrosEscala).length;
   const ordemPadrao = $('#ordem-padrao');
   if (ordemPadrao) ordemPadrao.hidden = !podeEditarEscala() || !state.colaboradores.some((c) => c.ordem_escala != null);
-  const repetirPadrao = $('#repetir-padrao');
-  if (repetirPadrao) repetirPadrao.hidden = !podeEditarEscala();
   wrap.classList.toggle('somente-leitura', !podeEditarEscala());
 }
 
@@ -946,8 +942,11 @@ function renderLegenda() {
         )}<button class="serie-cfg" id="cfg-serie-sa" title="Configurar a série variável" aria-label="Configurar a série variável">⚙</button></span>` +
         item('SERIE', '<span class="chip sa-chip">⇶</span>', 'Série fixa', fixas)
       : '') +
+    `<span class="legend-sep"></span>` +
+    `<button class="ghost" id="repetir-padrao" title="Repetir um padrão de trabalho/folga num intervalo de dias">↻ Repetir padrão</button>` +
     (state.pincel !== null ? `<span class="label" style="margin-left:8px">Pincel ativo — Esc para sair</span>` : '');
   el.onclick = (e) => {
+    if (e.target.closest('#repetir-padrao')) return dialogRepetirPadrao();
     if (e.target.closest('#cfg-serie-sa')) return dialogSerieSA();
     const b = e.target.closest('button[data-pincel]');
     if (!b) return;
