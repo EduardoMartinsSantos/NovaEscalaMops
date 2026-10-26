@@ -113,6 +113,7 @@ const state = {
   ultimoSelecionado: null,
   ordemColab: { campo: '', dir: 1 }, // ordenação da tabela de colaboradores (chave de COLUNAS_COLAB; '' = por nome)
   escala: null,
+  escalaEditando: false, // trava a escala por padrão; "Editar" libera, "Salvar" trava de novo
   pincel: null, // valor aplicado direto ao clicar/arrastar nas células
   bancoHoras: null, // lançamentos do banco de horas (carregado ao abrir a tela)
   filtroBH: { busca: '' },
@@ -301,11 +302,8 @@ function viewEscala() {
   const f = state.filtro;
   main.innerHTML = `
     <div class="page-head">
-      <div><h1>Escala</h1><p>${
-        podeEditarEscala()
-          ? 'Clique numa célula para definir o turno, ou escolha um pincel na legenda e arraste.'
-          : 'Somente leitura: apenas administradores editam a escala.'
-      }</p></div>
+      <div><h1>Escala</h1><p id="escala-sub">${esc(textoSubEscala())}</p></div>
+      <div class="head-actions" id="acoes-escala"></div>
       <div class="month-nav">
         <button class="icon" id="mes-ant" title="Mês anterior">‹</button>
         <strong id="mes-label">${esc(rotuloMes(state.mes))}</strong>
@@ -359,9 +357,50 @@ function viewEscala() {
     renderGrade();
   };
 
+  renderAcoesEscala();
   renderLegenda();
   ligarEventosGrade();
   carregarEscala();
+}
+
+const textoSubEscala = () =>
+  podeEditarEscala()
+    ? 'Clique numa célula para definir o turno, ou escolha um pincel na legenda e arraste.'
+    : state.usuario?.admin
+      ? 'Somente leitura. Clique em Editar para liberar alterações.'
+      : 'Somente leitura: apenas administradores editam a escala.';
+
+// Botão "Editar" (libera a escala) / "Salvar" (trava de novo) — só pra admins; cada ação já grava na hora,
+// então "Salvar" só fecha o modo de edição e tira o pincel ativo.
+function renderAcoesEscala() {
+  const el = $('#acoes-escala');
+  if (!el || !state.usuario?.admin) return;
+  const sub = $('#escala-sub');
+  if (sub) sub.textContent = textoSubEscala();
+  el.innerHTML = state.escalaEditando
+    ? `<button class="primary" id="escala-salvar">✓ Salvar</button>`
+    : `<button id="escala-editar">✎ Editar</button>`;
+  const editar = $('#escala-editar', el);
+  if (editar) {
+    editar.onclick = () => {
+      state.escalaEditando = true;
+      renderAcoesEscala();
+      renderLegenda();
+      renderGrade();
+    };
+  }
+  const salvar = $('#escala-salvar', el);
+  if (salvar) {
+    salvar.onclick = () => {
+      state.escalaEditando = false;
+      state.pincel = null;
+      limparPrevia();
+      renderAcoesEscala();
+      renderLegenda();
+      renderGrade();
+      toast('Escala travada.');
+    };
+  }
 }
 
 async function trocarMes(mes) {
@@ -901,7 +940,7 @@ function renderGrade() {
 }
 
 // Só admins lançam na escala e no sobreaviso; os demais veem em modo leitura.
-const podeEditarEscala = () => !!state.usuario?.admin;
+const podeEditarEscala = () => !!state.usuario?.admin && state.escalaEditando;
 
 function renderLegenda() {
   const el = $('#legenda');
