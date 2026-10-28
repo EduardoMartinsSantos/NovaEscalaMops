@@ -604,19 +604,51 @@ table.grid tfoot .alerta-fds { margin-left: 2px; font-weight: 800; letter-spacin
   .bh-saldo-cel.pos, .pos { color: #7bd68c; }
   .bh-saldo-cel.neg, .neg { color: #ff9b9b; }
 }
-dialog.larga { width: min(640px, calc(100vw - 32px)); }
-.bh-saldo-grande { font-size: 15px; }
-.bh-saldo-grande strong { font-variant-numeric: tabular-nums; }
-.bh-sep { padding-top: 12px; border-top: 1px solid var(--border); }
-.bh-sep:first-of-type { padding-top: 0; border-top: 0; }
-.bh-rotulo { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 8px; }
-.bh-novo { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
-.bh-novo .field { flex: 1 1 110px; min-width: 0; }
-.bh-novo .bh-obs-campo { flex: 2 1 160px; }
-.bh-novo button { flex: none; }
-.bh-sep .hint { margin: 8px 0 0; }
-.bh-historico { font-size: 13px; }
-.bh-historico td, .bh-historico th { padding: 7px 10px; }
+/* Diálogo do banco de horas: cabeçalho e rodapé fixos, corpo rola */
+dialog.larga { width: min(760px, calc(100vw - 32px)); }
+dialog.larga form { display: flex; flex-direction: column; max-height: calc(100vh - 48px); }
+dialog.larga .body { overflow-y: auto; gap: 18px; }
+dialog.larga footer { border-top: 1px solid var(--border); }
+.bh-head { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.bh-head p { margin: 2px 0 0; font-size: 13px; }
+.bh-resumo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.bh-kpi { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.bh-kpi span { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.bh-kpi strong { font-size: 22px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.bh-kpi small { font-size: 12px; color: var(--muted); }
+.bh-kpi-destaque { background: color-mix(in srgb, var(--primary) 9%, var(--surface)); border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+.bh-rotulo { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 8px; }
+.bh-chip { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+.bh-tabela-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow: auto; }
+.bh-tabela-wrap .bh-historico { margin: 0; }
+.bh-rolagem { max-height: 240px; }
+.bh-rolagem thead th { position: sticky; top: 0; background: var(--surface); }
+.bh-historico { font-size: 13px; width: 100%; }
+.bh-historico td, .bh-historico th { padding: 8px 12px; }
+.bh-historico tr:last-child td { border-bottom: 0; }
+.bh-historico .bh-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bh-historico tr.bh-mes-atual td { background: color-mix(in srgb, var(--primary) 6%, transparent); font-weight: 600; }
+.bh-carrossel { display: grid; gap: 12px; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: var(--radius); }
+.bh-carrossel-nav { display: flex; align-items: center; gap: 6px; }
+.bh-carrossel-abas { flex: 1; display: flex; gap: 4px; padding: 3px; border-radius: 9px; background: var(--surface-2); }
+.bh-aba { flex: 1; justify-content: center; border: 0; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; padding: 6px 10px; }
+.bh-aba.ativa { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
+.bh-carrossel .bh-acao:not([hidden]) { animation: bh-entra .18s ease-out; }
+@keyframes bh-entra { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+.bh-carrossel-pontos { display: flex; justify-content: center; gap: 6px; }
+.bh-carrossel-pontos i { width: 6px; height: 6px; border-radius: 50%; background: var(--border); transition: background .15s, width .15s; }
+.bh-carrossel-pontos i.ativo { width: 16px; border-radius: 3px; background: var(--primary); }
+@media (prefers-reduced-motion: reduce) { .bh-carrossel .bh-acao:not([hidden]) { animation: none; } }
+.bh-acao { display: grid; gap: 10px; align-content: start; }
+.bh-acao[hidden] { display: none; }
+.bh-acao-botoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.bh-acao-botoes button { flex: 1 1 auto; justify-content: center; }
+.bh-acao button.danger { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.bh-inicial-input { width: 90px; padding: 4px 8px; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .bh-resumo { grid-template-columns: 1fr; }
+  .bh-kpi strong { font-size: 19px; }
+}
 .bh-ponto-folga { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; margin-right: 5px; vertical-align: middle; }
 
 /* Padrão de trabalho (escala) */
@@ -641,8 +673,6 @@ dialog.larga { width: min(640px, calc(100vw - 32px)); }
   .legend button { padding: 5px; }
   .rp-ciclo { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
   table.grid .name { min-width: 130px; max-width: 130px; }
-  .bh-novo { gap: 6px; }
-  .bh-novo .field { flex-basis: 90px; }
 }
 
 /* Escala: indicadores rápidos no topo da página (dados reais, hoje) */
@@ -651,3 +681,8 @@ dialog.larga { width: min(640px, calc(100vw - 32px)); }
 .kpi-row .kpi .v { font-size: 22px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .kpi-row .kpi .r { color: var(--muted); font-size: 12px; margin-top: 4px; display: flex; align-items: center; gap: 6px; }
 .kpi-row .kpi .r i { width: 9px; height: 9px; border-radius: 3px; background: var(--c); flex: none; }
+.bh-rotulo-linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.bh-rotulo-linha .bh-rotulo { margin-bottom: 0; }
+.bh-add-mes { display: flex; gap: 6px; }
+.bh-add-mes input { padding: 4px 8px; }
+.bh-add-mes button { padding: 4px 10px; }

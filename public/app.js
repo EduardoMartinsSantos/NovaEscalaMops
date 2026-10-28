@@ -122,6 +122,7 @@ const state = {
   escalaEditando: false, // trava a escala por padrão; "Editar" libera, "Salvar" trava de novo
   pincel: null, // valor aplicado direto ao clicar/arrastar nas células
   bancoHoras: null, // lançamentos do banco de horas (carregado ao abrir a tela)
+  bhSaldos: null, // saldos iniciais mensais do banco de horas ({ colaborador_id, mes, saldo_inicial })
   filtroBH: { busca: '' },
 };
 
@@ -2624,21 +2625,21 @@ function formColaborador(c = null) {
 // =====================================================================
 // BANCO DE HORAS
 // =====================================================================
-// Lançamentos avulsos por colaborador: horas > 0 = crédito (hora extra), horas < 0 = débito (folga tirada do
-// banco). O saldo de cada um é só a soma dos lançamentos; a cada 8h de crédito equivalem a 1 dia de folga.
-// Tela e API são só para admins (dados sensíveis).
+// Separado por mês: o admin digita o saldo inicial de cada colaborador no início do mês; o saldo final é
+// saldo inicial + lançamentos do mês (horas > 0 = crédito, < 0 = débito, ex.: folga agendada). A cada 8h de
+// saldo final equivalem a 1 dia de folga. Tela e API são só para admins (dados sensíveis).
 
 const HORAS_POR_DIA_BH = 8; // 1 dia de folga, para o botão "Agendar folga"
 
 async function carregarBancoHoras() {
-  state.bancoHoras = await api('GET', '/banco-horas');
+  [state.bancoHoras, state.bhSaldos] = await Promise.all([api('GET', '/banco-horas'), api('GET', '/banco-horas/saldos')]);
 }
 
 function viewBancoHoras() {
   const f = state.filtroBH;
   main.innerHTML = `
     <div class="page-head">
-      <div><h1>Banco de Horas</h1><p>A cada 8h de crédito acumulado equivalem a 1 dia de folga. Clique num colaborador para lançar horas ou ver o histórico.</p></div>
+      <div><h1>Banco de Horas</h1><p>Saldo do mês vigente: saldo inicial menos os descontos (folgas e lançamentos) do mês. O saldo inicial é cadastrado em Lançar horas / Ver lançamentos; a cada 8h equivalem a 1 dia de folga.</p></div>
     </div>
     <div class="toolbar">
       <input id="busca-bh" type="search" placeholder="Buscar colaborador…" value="${esc(f.busca)}">
@@ -2651,8 +2652,14 @@ function viewBancoHoras() {
   carregarBancoHoras().then(renderBancoHoras).catch((e) => toast(e.message, true));
 }
 
-const lancamentosDe = (colaboradorId) => (state.bancoHoras || []).filter((l) => l.colaborador_id === colaboradorId);
-const saldoBH = (colaboradorId) => lancamentosDe(colaboradorId).reduce((n, l) => n + l.horas, 0);
+// Lançamentos do colaborador no mês (data YYYY-MM-DD começa com YYYY-MM).
+const lancamentosDe = (colaboradorId, mes) =>
+  (state.bancoHoras || []).filter((l) => l.colaborador_id === colaboradorId && l.data.startsWith(mes));
+// Saldo inicial digitado para o mês (null = ainda não cadastrado).
+const saldoInicialBH = (colaboradorId, mes) =>
+  (state.bhSaldos || []).find((s) => s.colaborador_id === colaboradorId && s.mes === mes)?.saldo_inicial ?? null;
+const movimentoBH = (colaboradorId, mes) => lancamentosDe(colaboradorId, mes).reduce((n, l) => n + l.horas, 0);
+const saldoBH = (colaboradorId, mes) => (saldoInicialBH(colaboradorId, mes) ?? 0) + movimentoBH(colaboradorId, mes);
 const fmtHorasSinal = (h) => (h > 0 ? `+${fmtHoras(h)}` : fmtHoras(h));
 
 // "2 dias de folga", "1 dia e 4h de folga", "3h em débito" ou "Sem lançamentos".
@@ -2669,31 +2676,38 @@ function equivalenteBH(total) {
 
 // Dias completos de folga a partir do saldo em horas (a cada 8h = 1 dia; a hora restante fica só no Saldo).
 const diasBH = (total) => Math.trunc(total / HORAS_POR_DIA_BH);
+const PAGINAS_ACAO_BH = ['Agendar folga', 'Lançar horas'];
+const fmtDiasBH = (n) => (n ? `${n} dia${Math.abs(n) > 1 ? 's' : ''}` : '—');
+const classeBH = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : 'muted');
 
 function renderBancoHoras() {
   const el = $('#lista-bh');
   if (!el) return;
+  const mes = mesAtual(); // a tabela mostra só o banco do mês vigente
   const busca = state.filtroBH.busca.trim().toLowerCase();
+  // Maior saldo final primeiro; empate por nome.
+  const saldos = new Map(state.colaboradores.map((c) => [c.id, saldoBH(c.id, mes)]));
   const lista = state.colaboradores
     .filter((c) => !busca || c.nome.toLowerCase().includes(busca))
-    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    .sort((a, b) => saldos.get(b.id) - saldos.get(a.id) || a.nome.localeCompare(b.nome, 'pt-BR'));
   if (!lista.length) {
     el.innerHTML = `<div class="empty">${state.colaboradores.length ? 'Nenhum colaborador encontrado.' : 'Nenhum colaborador cadastrado ainda.'}</div>`;
     return;
   }
+  const classe = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : 'muted');
   el.innerHTML = `<table class="list bh-tabela"><thead><tr>
-      <th>Nome</th><th>Torre</th><th>Turno</th><th>Saldo</th><th title="A cada 8h de saldo, 1 dia de folga">Dias</th><th></th>
+      <th>Nome</th><th>Torre</th><th>Turno</th><th title="Saldo inicial do mês vigente + lançamentos e folgas do mês">Saldo Atual</th><th title="A cada 8h de saldo, 1 dia de folga">Dias</th><th></th>
     </tr></thead><tbody>${lista
       .map((c) => {
-        const total = saldoBH(c.id);
+        const total = saldos.get(c.id);
         const dias = diasBH(total);
-        const n = lancamentosDe(c.id).length;
+        const n = lancamentosDe(c.id, mes).length;
         return `<tr class="${c.ativo ? '' : 'inativo'}" data-id="${c.id}">
           <td>${esc(c.nome)}</td>
           <td>${tagTorre(porId(state.torres, c.torre_id))}</td>
           <td>${tagTurno(porId(state.turnos, c.turno_id))}</td>
-          <td class="bh-saldo-cel ${total > 0 ? 'pos' : total < 0 ? 'neg' : 'muted'}">${fmtHoras(total)}</td>
-          <td class="bh-dias-cel ${dias > 0 ? 'pos' : dias < 0 ? 'neg' : 'muted'}">${dias}</td>
+          <td class="bh-saldo-cel ${classe(total)}">${fmtHoras(total)}</td>
+          <td class="bh-dias-cel ${classe(dias)}">${dias}</td>
           <td class="actions"><button class="ghost" data-bh-abrir="${c.id}">${n ? 'Ver lançamentos' : 'Lançar horas'}</button></td>
         </tr>`;
       })
@@ -2710,69 +2724,244 @@ function dialogBancoHoras(c) {
   dialog.classList.add('larga');
   dialog.addEventListener('close', () => dialog.classList.remove('larga'), { once: true });
   dialogForm.onsubmit = (e) => e.preventDefault();
+  let editandoMes = null; // mês cujo saldo inicial está sendo editado na tabela "Saldos por mês"
+  let paginaAcao = 0; // carrossel de ações: 0 = Agendar folga (primeira página), 1 = Lançar horas
+  const mesesAdicionados = new Set(); // meses incluídos pelo "Adicionar mês" que ainda não têm saldo salvo
   const render = () => {
-    // Mais recente primeiro (id crescente = ordem de lançamento).
-    const lista = [...lancamentosDe(c.id)].sort((a, b) => b.id - a.id);
-    const total = lista.reduce((n, l) => n + l.horas, 0);
+    // Histórico com todos os lançamentos, mais recente primeiro (id crescente = ordem de lançamento).
+    // Saldo do topo = mês vigente (saldo inicial + lançamentos do mês).
+    const mes = mesAtual();
+    const lista = (state.bancoHoras || []).filter((l) => l.colaborador_id === c.id).sort((a, b) => b.id - a.id);
+    const inicial = saldoInicialBH(c.id, mes);
+    const total = saldoBH(c.id, mes);
+    // Meses com saldo inicial ou lançamentos do colaborador, mais o mês aberto na tela; mais recente primeiro.
+    const meses = [
+      ...new Set([
+        mes,
+        ...mesesAdicionados,
+        ...(state.bhSaldos || []).filter((s) => s.colaborador_id === c.id).map((s) => s.mes),
+        ...(state.bancoHoras || []).filter((l) => l.colaborador_id === c.id).map((l) => l.data.slice(0, 7)),
+      ]),
+    ].sort((a, b) => b.localeCompare(a));
+    const linhaMes = (ms) => {
+      const ini = saldoInicialBH(c.id, ms);
+      const fim = saldoBH(c.id, ms);
+      const nome = rotuloMes(ms).replace(/^./, (l) => l.toUpperCase());
+      const celInicial =
+        editandoMes === ms
+          ? `<input type="text" inputmode="decimal" class="bh-inicial-input" data-bh-inicial value="${
+              ini === null ? '' : String(ini).replace('.', ',')
+            }" placeholder="horas" aria-label="Saldo inicial de ${esc(nome)}">`
+          : ini === null
+            ? '<span class="muted">—</span>'
+            : fmtHoras(ini);
+      const acoes =
+        editandoMes === ms
+          ? '<button type="button" class="primary" data-bh-inicial-salvar>Salvar</button> <button type="button" class="ghost" data-bh-inicial-cancelar>Cancelar</button>'
+          : `<button type="button" class="ghost" data-bh-inicial-editar="${ms}">Editar</button>${
+              ms === mes ? '' : ` <button type="button" class="ghost danger icon" data-bh-mes-remover="${ms}" title="Remover mês">✕</button>`
+            }`;
+      const dias = diasBH(fim);
+      return `<tr${ms === mes ? ' class="bh-mes-atual"' : ''}><td>${esc(nome)}${
+        ms === mes ? ' <span class="bh-chip">atual</span>' : ''
+      }</td><td class="bh-num">${celInicial}</td><td class="bh-num ${classeBH(fim)}">${fmtHoras(fim)}</td><td class="bh-num ${classeBH(
+        dias
+      )}">${fmtDiasBH(dias)}</td><td class="actions">${acoes}</td></tr>`;
+    };
+    const diasAtual = diasBH(total);
     dialogForm.innerHTML = `
-      <header><h2>Banco de horas — ${esc(c.nome)}</h2></header>
+      <header class="bh-head">
+        <h2>${esc(c.nome)}</h2>
+        <p class="muted">Banco de horas · ${esc(rotuloMes(mes))}</p>
+      </header>
       <div class="body">
-        <div class="bh-saldo-grande">Saldo: <strong class="${total > 0 ? 'pos' : total < 0 ? 'neg' : ''}">${fmtHoras(
-          total
-        )}</strong> <span class="muted">(${equivalenteBH(total)})</span></div>
-        <div class="bh-sep">
-          <span class="bh-rotulo">Lançar horas</span>
-          <div class="bh-novo">
-            <label class="field bh-horas-campo"><span>Horas</span><input type="text" inputmode="decimal" data-bh-horas placeholder="8, -8 ou 160" autofocus></label>
-            <label class="field bh-obs-campo"><span>Observação</span><input type="text" maxlength="200" data-bh-obs placeholder="opcional"></label>
-            <button type="button" class="primary" data-bh-lancar>Lançar</button>
-          </div>
-          <p class="hint">Positivo = crédito (ex.: hora extra ou backlog); negativo = débito (ex.: folga tirada do banco). Sem limite de 24h por lançamento.</p>
+        <div class="bh-resumo">
+          <div class="bh-kpi"><span>Saldo inicial</span><strong>${inicial === null ? '—' : fmtHoras(inicial)}</strong><small>cadastrado no mês</small></div>
+          <div class="bh-kpi bh-kpi-destaque"><span>Saldo atual</span><strong class="${classeBH(total)}">${fmtHoras(
+            total
+          )}</strong><small>${esc(equivalenteBH(total))}</small></div>
+          <div class="bh-kpi"><span>Dias a compensar</span><strong class="${classeBH(diasAtual)}">${diasAtual}</strong><small>1 dia a cada ${fmtHoras(
+            HORAS_POR_DIA_BH
+          )}</small></div>
         </div>
-        <div class="bh-sep">
-          <span class="bh-rotulo">Agendar folga</span>
-          <div class="bh-novo">
-            <label class="field bh-horas-campo"><span>Dia</span><input type="date" data-bh-folga-data></label>
-            <label class="field bh-obs-campo"><span>Observação</span><input type="text" maxlength="200" data-bh-folga-obs placeholder="opcional"></label>
-            <button type="button" class="ghost" data-bh-agendar>Agendar folga</button>
+
+        <section>
+          <div class="bh-rotulo-linha">
+            <span class="bh-rotulo">Saldos por mês</span>
+            <div class="bh-add-mes">
+              <input type="month" data-bh-novo-mes value="${somarMes(meses[0], 1)}" aria-label="Mês a adicionar">
+              <button type="button" data-bh-add-mes>+ Adicionar mês</button>
+            </div>
           </div>
-          <p class="hint">Desconta ${fmtHoras(HORAS_POR_DIA_BH)} (1 dia) do saldo na data escolhida.</p>
+          <div class="bh-tabela-wrap">
+            <table class="list bh-historico"><thead><tr><th>Mês</th><th class="bh-num">Saldo inicial</th><th class="bh-num" title="Saldo inicial + lançamentos e folgas do mês">Saldo</th><th class="bh-num" title="1 dia a cada ${fmtHoras(
+              HORAS_POR_DIA_BH
+            )} de saldo">Dias a compensar</th><th></th></tr></thead>
+              <tbody>${meses.map(linhaMes).join('')}</tbody></table>
+          </div>
+        </section>
+
+        <div class="bh-carrossel">
+          <div class="bh-carrossel-nav">
+            <button type="button" class="ghost icon" data-bh-pag="-1" title="Anterior" aria-label="Anterior">‹</button>
+            <div class="bh-carrossel-abas" role="tablist">
+              ${PAGINAS_ACAO_BH.map(
+                (t, i) =>
+                  `<button type="button" role="tab" class="bh-aba${i === paginaAcao ? ' ativa' : ''}" aria-selected="${i === paginaAcao}" data-bh-aba="${i}">${t}</button>`
+              ).join('')}
+            </div>
+            <button type="button" class="ghost icon" data-bh-pag="1" title="Próximo" aria-label="Próximo">›</button>
+          </div>
+          <section class="bh-acao" ${paginaAcao === 0 ? '' : 'hidden'}>
+            <label class="field"><span>Dia</span><input type="date" data-bh-folga-data></label>
+            <label class="field"><span>Observação</span><input type="text" maxlength="200" data-bh-folga-obs placeholder="Opcional"></label>
+            <div class="bh-acao-botoes">
+              <button type="button" class="primary" data-bh-agendar>Agendar folga</button>
+            </div>
+            <p class="hint">Desconta ${fmtHoras(HORAS_POR_DIA_BH)} (1 dia) e marca o dia em roxo na escala.</p>
+          </section>
+          <section class="bh-acao" ${paginaAcao === 1 ? '' : 'hidden'}>
+            <label class="field"><span>Horas</span><input type="text" inputmode="decimal" data-bh-horas placeholder="Ex.: 8 ou 160"></label>
+            <label class="field"><span>Observação</span><input type="text" maxlength="200" data-bh-obs placeholder="Opcional"></label>
+            <div class="bh-acao-botoes">
+              <button type="button" class="primary" data-bh-lancar="1">+ Lançar</button>
+              <button type="button" class="danger" data-bh-lancar="-1">− Excluir horas</button>
+            </div>
+            <p class="hint">Lançar soma ao saldo (hora extra, backlog); Excluir horas desconta.</p>
+          </section>
+          <div class="bh-carrossel-pontos" aria-hidden="true">${PAGINAS_ACAO_BH.map(
+            (_, i) => `<i class="${i === paginaAcao ? 'ativo' : ''}"></i>`
+          ).join('')}</div>
         </div>
         <p class="form-error" data-bh-erro></p>
-        ${
-          lista.length
-            ? `<table class="list bh-historico"><thead><tr><th>Data</th><th>Horas</th><th>Observação</th><th></th></tr></thead><tbody>${lista
-                .map(
-                  (l) =>
-                    `<tr><td class="muted">${
-                      l.tipo === 'FOLGA' ? '<i class="bh-ponto-folga" title="Agendada pelo Banco de Horas (está roxa na escala)"></i>' : ''
-                    }${l.data.split('-').reverse().join('/')}</td><td class="${
-                      l.horas < 0 ? 'neg' : 'pos'
-                    }">${fmtHorasSinal(l.horas)}</td><td>${esc(l.observacao || '')}</td><td class="actions"><button type="button" class="ghost danger icon" data-bh-del="${
-                      l.id
-                    }" data-bh-del-tipo="${l.tipo}" title="Excluir">✕</button></td></tr>`
-                )
-                .join('')}</tbody></table>`
-            : '<p class="muted vazio">Nenhum lançamento ainda.</p>'
-        }
+
+        <section>
+          <span class="bh-rotulo">Histórico de lançamentos${lista.length ? ` <span class="bh-chip">${lista.length}</span>` : ''}</span>
+          ${
+            lista.length
+              ? `<div class="bh-tabela-wrap bh-rolagem"><table class="list bh-historico"><thead><tr><th>Data</th><th class="bh-num">Horas</th><th>Observação</th><th></th></tr></thead><tbody>${lista
+                  .map(
+                    (l) =>
+                      `<tr><td class="muted">${
+                        l.tipo === 'FOLGA' ? '<i class="bh-ponto-folga" title="Agendada pelo Banco de Horas (está roxa na escala)"></i>' : ''
+                      }${l.data.split('-').reverse().join('/')}</td><td class="bh-num ${
+                        l.horas < 0 ? 'neg' : 'pos'
+                      }">${fmtHorasSinal(l.horas)}</td><td>${esc(l.observacao || '')}</td><td class="actions"><button type="button" class="ghost danger icon" data-bh-del="${
+                        l.id
+                      }" data-bh-del-tipo="${l.tipo}" title="Excluir">✕</button></td></tr>`
+                  )
+                  .join('')}</tbody></table></div>`
+              : '<p class="muted vazio">Nenhum lançamento ainda.</p>'
+          }
+        </section>
       </div>
       <footer><button type="button" data-cancel>Fechar</button></footer>`;
     $('[data-cancel]', dialogForm).onclick = () => dialog.close();
-    $('[data-bh-lancar]', dialogForm).onclick = async () => {
-      const horas = dialogForm.querySelector('[data-bh-horas]').value;
-      const observacao = dialogForm.querySelector('[data-bh-obs]').value;
-      const erroEl = dialogForm.querySelector('[data-bh-erro]');
-      erroEl.textContent = '';
+    // Carrossel: troca a página sem redesenhar o diálogo (preserva o que já foi digitado).
+    const irParaPagina = (n) => {
+      paginaAcao = (n + PAGINAS_ACAO_BH.length) % PAGINAS_ACAO_BH.length;
+      dialogForm.querySelectorAll('.bh-carrossel .bh-acao').forEach((sec, i) => (sec.hidden = i !== paginaAcao));
+      dialogForm.querySelectorAll('[data-bh-aba]').forEach((b, i) => {
+        b.classList.toggle('ativa', i === paginaAcao);
+        b.setAttribute('aria-selected', i === paginaAcao);
+      });
+      dialogForm.querySelectorAll('.bh-carrossel-pontos i').forEach((p, i) => p.classList.toggle('ativo', i === paginaAcao));
+    };
+    dialogForm.querySelectorAll('[data-bh-pag]').forEach((b) => (b.onclick = () => irParaPagina(paginaAcao + Number(b.dataset.bhPag))));
+    dialogForm.querySelectorAll('[data-bh-aba]').forEach((b) => (b.onclick = () => irParaPagina(Number(b.dataset.bhAba))));
+    // Saldo inicial por mês: Editar abre o campo na linha; Salvar grava (vazio remove o saldo do mês).
+    dialogForm.querySelectorAll('[data-bh-inicial-editar]').forEach((btn) => {
+      btn.onclick = () => {
+        editandoMes = btn.dataset.bhInicialEditar;
+        render();
+        dialogForm.querySelector('[data-bh-inicial]').focus();
+      };
+    });
+    // Adicionar mês: entra na tabela já em edição do saldo inicial (se o mês já existir, só abre a edição).
+    $('[data-bh-add-mes]', dialogForm).onclick = () => {
+      const novo = dialogForm.querySelector('[data-bh-novo-mes]').value;
+      if (!/^\d{4}-\d{2}$/.test(novo)) return toast('Escolha o mês.', true);
+      mesesAdicionados.add(novo);
+      editandoMes = novo;
+      render();
+      dialogForm.querySelector('[data-bh-inicial]').focus();
+    };
+    // Remover mês: apaga o saldo inicial do mês. Lançamentos/folgas do mês não são apagados aqui — se houver,
+    // o mês continua na tabela e é preciso excluí-los no histórico antes. O mês vigente fica sempre na tabela.
+    dialogForm.querySelectorAll('[data-bh-mes-remover]').forEach((btn) => {
+      btn.onclick = async () => {
+        const ms = btn.dataset.bhMesRemover;
+        const nome = rotuloMes(ms);
+        const n = lancamentosDe(c.id, ms).length;
+        if (n) {
+          toast(`${nome} tem ${n} lançamento${n > 1 ? 's' : ''}. Exclua no histórico antes de remover o mês.`, true);
+          return;
+        }
+        if (!confirm(`Remover ${nome} e o saldo inicial cadastrado?`)) return;
+        try {
+          if (saldoInicialBH(c.id, ms) !== null) {
+            await api('PUT', '/banco-horas/saldos', { colaborador_id: c.id, mes: ms, saldo_inicial: '' });
+            state.bhSaldos = await api('GET', '/banco-horas/saldos');
+          }
+          mesesAdicionados.delete(ms);
+          render();
+          renderBancoHoras();
+          toast('Mês removido.');
+        } catch (err) {
+          toast(err.message, true);
+        }
+      };
+    });
+    const cancelarEdicao = () => {
+      // Mês adicionado e cancelado sem salvar some da tabela de novo.
+      if (saldoInicialBH(c.id, editandoMes) === null) mesesAdicionados.delete(editandoMes);
+      editandoMes = null;
+      render();
+    };
+    const salvarInicial = async () => {
       try {
-        await api('POST', '/banco-horas', { colaborador_id: c.id, data: hojeStr(), horas, observacao });
-        await carregarBancoHoras();
+        const saldo_inicial = dialogForm.querySelector('[data-bh-inicial]').value;
+        await api('PUT', '/banco-horas/saldos', { colaborador_id: c.id, mes: editandoMes, saldo_inicial });
+        state.bhSaldos = await api('GET', '/banco-horas/saldos');
+        editandoMes = null;
         render();
         renderBancoHoras();
-        toast('Lançamento adicionado.');
+        toast('Saldo inicial salvo.');
       } catch (err) {
-        erroEl.textContent = err.message;
+        toast(err.message, true);
       }
     };
+    if (editandoMes) {
+      $('[data-bh-inicial-salvar]', dialogForm).onclick = salvarInicial;
+      $('[data-bh-inicial-cancelar]', dialogForm).onclick = cancelarEdicao;
+      dialogForm.querySelector('[data-bh-inicial]').onkeydown = (e) => {
+        if (e.key === 'Enter') salvarInicial();
+        if (e.key === 'Escape') {
+          e.preventDefault(); // não fecha o diálogo, só cancela a edição
+          cancelarEdicao();
+        }
+      };
+    }
+    // Lançar (+1) credita; Excluir horas (-1) debita o mesmo valor digitado. Valor inválido segue cru para o servidor validar.
+    dialogForm.querySelectorAll('[data-bh-lancar]').forEach((btn) => {
+      btn.onclick = async () => {
+        const digitado = dialogForm.querySelector('[data-bh-horas]').value;
+        const n = Number(digitado.replace(',', '.'));
+        const horas = Number.isFinite(n) && digitado.trim() ? Number(btn.dataset.bhLancar) * Math.abs(n) : digitado;
+        const observacao = dialogForm.querySelector('[data-bh-obs]').value;
+        const erroEl = dialogForm.querySelector('[data-bh-erro]');
+        erroEl.textContent = '';
+        try {
+          await api('POST', '/banco-horas', { colaborador_id: c.id, data: hojeStr(), horas, observacao });
+          await carregarBancoHoras();
+          render();
+          renderBancoHoras();
+          toast(horas < 0 ? 'Horas descontadas.' : 'Lançamento adicionado.');
+        } catch (err) {
+          erroEl.textContent = err.message;
+        }
+      };
+    });
     // Agendar folga: escolhe o dia e desconta 1 dia (8h) fixo do saldo — sem precisar digitar horas.
     // É o único jeito de marcar FOLGA_BANCO (roxa) na escala; o pincel e o clique na célula não oferecem essa opção.
     $('[data-bh-agendar]', dialogForm).onclick = async () => {

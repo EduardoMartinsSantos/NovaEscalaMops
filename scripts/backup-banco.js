@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Pool } = require('pg');
 
-const TABELAS = ['torres', 'turnos', 'mesas', 'contratos', 'colaboradores', 'escala', 'sobreaviso', 'banco_horas'];
+const TABELAS = ['torres', 'turnos', 'mesas', 'contratos', 'colaboradores', 'escala', 'sobreaviso', 'banco_horas', 'banco_horas_mes'];
 
 async function main() {
   if (!process.env.BACKUP_URL) throw new Error('Defina BACKUP_URL.');
