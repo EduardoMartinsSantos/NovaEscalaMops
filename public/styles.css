@@ -686,3 +686,6 @@ dialog.larga footer { border-top: 1px solid var(--border); }
 .bh-add-mes { display: flex; gap: 6px; }
 .bh-add-mes input { padding: 4px 8px; }
 .bh-add-mes button { padding: 4px 10px; }
+
+/* Dashboard: texto pronto para compartilhar (folgas de compensação) */
+.texto-compartilhar { width: 100%; resize: vertical; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }

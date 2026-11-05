@@ -1663,9 +1663,11 @@ function viewDashboard() {
       <div class="head-actions">
         <label class="dash-dia">Dia <input type="date" id="dash-data" value="${state.dashData}"></label>
         <button id="dash-hoje">Hoje</button>
+        <button id="dash-compensacao" title="Texto com as folgas de compensação (banco de horas) para compartilhar">🗓 Folgas de compensação</button>
       </div>
     </div>
     <div id="dash"><div class="empty">Carregando…</div></div>`;
+  $('#dash-compensacao').onclick = dialogFolgasCompensacao;
   $('#dash-data').onchange = (e) => {
     if (!e.target.value) return;
     state.dashData = e.target.value;
@@ -1677,6 +1679,75 @@ function viewDashboard() {
     carregarDashboard();
   };
   carregarDashboard();
+}
+
+// Planejamento de folgas de compensação: as células FOLGA_BANCO (roxas, agendadas pelo Banco de Horas) no
+// período escolhido, uma linha por pessoa com as datas, no formato usado para compartilhar no grupo.
+const MAX_MESES_COMPENSACAO = 6;
+
+async function textoFolgasCompensacao(de, ate) {
+  const meses = [];
+  for (let m = de.slice(0, 7); m <= ate.slice(0, 7) && meses.length < MAX_MESES_COMPENSACAO; m = somarMes(m, 1)) meses.push(m);
+  const escalas = await Promise.all(meses.map((m) => api('GET', `/escala?mes=${m}`)));
+  const porPessoa = new Map();
+  for (const x of escalas.flatMap((e) => e.celulas)) {
+    if (x.tipo !== 'FOLGA_BANCO' || x.data < de || x.data > ate) continue;
+    if (!porPessoa.has(x.colaborador_id)) porPessoa.set(x.colaborador_id, []);
+    porPessoa.get(x.colaborador_id).push(x.data);
+  }
+  // Ordem: pela primeira folga; empate por nome.
+  const linhas = [...porPessoa]
+    .map(([id, datas]) => ({ nome: porId(state.colaboradores, id)?.nome || `#${id}`, datas: datas.sort() }))
+    .sort((a, b) => a.datas[0].localeCompare(b.datas[0]) || a.nome.localeCompare(b.nome, 'pt-BR'))
+    .map(({ nome, datas }) => `* ${nome.toUpperCase()}: ${datas.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(', ')}`);
+  return ['🚨 *PESSOAL ATENÇÃO A ESCALA DE COMPENSAÇÃO* 🚨', ...(linhas.length ? linhas : ['* Nenhuma folga de compensação no período.'])].join('\n');
+}
+
+function dialogFolgasCompensacao() {
+  const de = state.dashData || hojeStr();
+  const fimMesSeguinte = (() => {
+    const [a, m] = somarMes(de.slice(0, 7), 1).split('-').map(Number);
+    return `${a}-${pad(m)}-${pad(new Date(a, m, 0).getDate())}`;
+  })();
+  abrirDialog({
+    titulo: 'Folgas de compensação',
+    confirmar: '⧉ Copiar',
+    corpo: `
+      <div class="row">
+        <label class="field"><span>De</span><input type="date" name="de" value="${de}"></label>
+        <label class="field"><span>Até</span><input type="date" name="ate" value="${fimMesSeguinte}"></label>
+      </div>
+      <label class="field"><span>Texto</span><textarea name="texto" rows="10" readonly class="texto-compartilhar">Carregando…</textarea></label>
+      <p class="hint">Folgas agendadas pelo Banco de Horas (roxas na escala). Período de até ${MAX_MESES_COMPENSACAO} meses.</p>`,
+    async onSubmit(form) {
+      try {
+        await navigator.clipboard.writeText(form.elements.texto.value);
+      } catch {
+        throw new Error('Não foi possível copiar. Selecione o texto e copie manualmente.');
+      }
+      toast('Folgas de compensação copiadas.');
+    },
+    aoAbrir(form) {
+      const atualizar = async () => {
+        const [d, a] = [form.elements.de.value, form.elements.ate.value];
+        const area = form.elements.texto;
+        if (!d || !a || a < d) {
+          area.value = 'Escolha um período válido.';
+          return;
+        }
+        area.value = 'Carregando…';
+        try {
+          area.value = await textoFolgasCompensacao(d, a);
+        } catch (e) {
+          area.value = '';
+          toast(e.message, true);
+        }
+      };
+      form.elements.de.onchange = atualizar;
+      form.elements.ate.onchange = atualizar;
+      atualizar();
+    },
+  });
 }
 
 // Fim de semana do card "Próximo final de semana": o que está em andamento (se o dia for sábado/domingo)
