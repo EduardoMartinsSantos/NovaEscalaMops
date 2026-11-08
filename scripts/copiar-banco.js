@@ -37,7 +37,7 @@ const TABELAS = {
   ],
   escala: ['colaborador_id', 'data', 'tipo', 'turno_id'],
   sobreaviso: ['torre_id', 'data', 'colaborador_id', 'horas', 'tipo'],
-  banco_horas: ['id', 'colaborador_id', 'data', 'horas', 'observacao', 'tipo', 'criado_em'],
+  banco_horas: ['id', 'colaborador_id', 'data', 'horas', 'observacao', 'tipo', 'momento', 'criado_em'],
   banco_horas_mes: ['colaborador_id', 'mes', 'saldo_inicial'],
 };
 

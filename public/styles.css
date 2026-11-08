@@ -12,6 +12,7 @@
   --today: #fff7d6;
   --shadow: 0 8px 28px rgba(15, 23, 42, .14);
   --radius: 10px;
+  --roxo-banco: #ddd3f7; /* folga do banco de horas: dia completo e parcial usam a mesma cor */
   color-scheme: light;
 }
 
@@ -27,11 +28,14 @@
     --weekend: #1b2029;
     --today: #3a3217;
     --shadow: 0 8px 28px rgba(0, 0, 0, .5);
+    --roxo-banco: #3b2d63;
     color-scheme: dark;
   }
 }
 
 * { box-sizing: border-box; }
+/* O atributo hidden sempre esconde, mesmo em elementos com display próprio (ex.: .row é grid). */
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -188,13 +192,13 @@ table.grid.planilha td.p-folga { background: #e6a5a5; }
 table.grid.planilha td.p-ferias { background: #bdd7ee; color: #1f3b64; font-weight: 700; }
 table.grid.planilha td.p-atestado { background: #ffe699; color: #7a5b00; font-weight: 700; }
 /* Folga financiada pelo banco de horas: só é criada pelo painel de Banco de Horas (Agendar folga). */
-table.grid.planilha td.p-folga-banco { background: #ddd3f7; color: #4c1d95; }
+table.grid.planilha td.p-folga-banco { background: var(--roxo-banco); color: #4c1d95; }
 @media (prefers-color-scheme: dark) {
   table.grid.planilha td.p-trab { background: #1f4d2b; color: #b7f0c4; }
   table.grid.planilha td.p-folga { background: #5c2626; }
   table.grid.planilha td.p-ferias { background: #1e3a5f; color: #cfe3fa; }
   table.grid.planilha td.p-atestado { background: #5a4a12; color: #ffe8a3; }
-  table.grid.planilha td.p-folga-banco { background: #3b2d63; color: #d9c8f5; }
+  table.grid.planilha td.p-folga-banco { background: var(--roxo-banco); color: #d9c8f5; }
   table.grid.planilha tr.group td { background: #3a3f48; }
 }
 
@@ -689,3 +693,9 @@ dialog.larga footer { border-top: 1px solid var(--border); }
 
 /* Dashboard: texto pronto para compartilhar (folgas de compensação) */
 .texto-compartilhar { width: 100%; resize: vertical; font: 13px/1.5 ui-monospace, Consolas, monospace; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+
+/* Compensação parcial do banco de horas: meio quadrado roxo por cima da célula — entrada pinta de cima para baixo,
+   saída de baixo para cima (no fim do arquivo para vencer o "background" das classes p-*). */
+table.grid.planilha td.comp-entrada { background-image: linear-gradient(to bottom, var(--roxo-banco) 50%, transparent 50%); }
+table.grid.planilha td.comp-saida { background-image: linear-gradient(to top, var(--roxo-banco) 50%, transparent 50%); }
+.bh-ponto-folga.meio { background: linear-gradient(to bottom, #7c3aed 50%, transparent 50%); box-shadow: inset 0 0 0 1px #7c3aed; }

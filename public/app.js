@@ -676,6 +676,21 @@ function textoPlanilha(cel, c) {
   return AUSENCIAS[cel.tipo].nome.toUpperCase();
 }
 
+// Compensações parciais do banco de horas (entra mais tarde / sai mais cedo), por "colaborador|data".
+function compensacoesPorCelula(escala) {
+  const m = new Map();
+  for (const x of escala.compensacoes || []) {
+    const k = `${x.colaborador_id}|${x.data}`;
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(x);
+  }
+  return m;
+}
+const textoCompensacao = (x) =>
+  `Compensação (banco de horas): ${fmtHoras(x.horas)} ${x.momento === 'ENTRADA' ? 'na entrada (entra mais tarde)' : 'na saída (sai mais cedo)'}`;
+// Meio quadrado roxo: entrada pinta a metade de cima, saída a de baixo (no máximo uma compensação parcial por dia).
+const classeCompensacao = (lista) => (lista[0] ? (lista[0].momento === 'ENTRADA' ? 'comp-entrada' : 'comp-saida') : '');
+
 function tituloCelula(cel) {
   if (!cel) return 'Folga';
   if (cel.tipo === 'TURNO') {
@@ -856,6 +871,7 @@ function renderGrade() {
   const { dias, celulas } = state.escala;
   const hoje = hojeStr();
   const cel = new Map(celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
+  const comp = compensacoesPorCelula(state.escala);
   const colabs = colaboradoresVisiveis();
 
   const clsDia = (d) => {
@@ -885,7 +901,11 @@ function renderGrade() {
         t += `<tr data-colab="${c.id}" data-grupo="${chave}-${gi}"><td class="name">${nomePlanilha(c, { arrastavel })}</td>`;
         for (const d of dias) {
           const x = cel.get(`${c.id}|${d}`);
-          t += `<td class="cell ${clsDia(d)} ${classePlanilha(x)}" data-c="${c.id}" data-d="${d}" title="${esc(tituloCelula(x))}">${textoPlanilha(x, c)}</td>`;
+          const cp = comp.get(`${c.id}|${d}`) || [];
+          const titulo = [tituloCelula(x), ...cp.map(textoCompensacao)].filter(Boolean).join('\n');
+          t += `<td class="cell ${clsDia(d)} ${classePlanilha(x)} ${classeCompensacao(cp)}" data-c="${c.id}" data-d="${d}" title="${esc(
+            titulo
+          )}">${textoPlanilha(x, c)}</td>`;
         }
         t += '</tr>';
       }
@@ -1690,16 +1710,21 @@ async function textoFolgasCompensacao(de, ate) {
   for (let m = de.slice(0, 7); m <= ate.slice(0, 7) && meses.length < MAX_MESES_COMPENSACAO; m = somarMes(m, 1)) meses.push(m);
   const escalas = await Promise.all(meses.map((m) => api('GET', `/escala?mes=${m}`)));
   const porPessoa = new Map();
-  for (const x of escalas.flatMap((e) => e.celulas)) {
-    if (x.tipo !== 'FOLGA_BANCO' || x.data < de || x.data > ate) continue;
-    if (!porPessoa.has(x.colaborador_id)) porPessoa.set(x.colaborador_id, []);
-    porPessoa.get(x.colaborador_id).push(x.data);
+  const incluir = (id, data, sufixo = '') => {
+    if (data < de || data > ate) return;
+    if (!porPessoa.has(id)) porPessoa.set(id, []);
+    porPessoa.get(id).push({ data, sufixo });
+  };
+  for (const x of escalas.flatMap((e) => e.celulas)) if (x.tipo === 'FOLGA_BANCO') incluir(x.colaborador_id, x.data);
+  // Parcial: "05/11 (1h entrada)".
+  for (const x of escalas.flatMap((e) => e.compensacoes || [])) {
+    incluir(x.colaborador_id, x.data, ` (${fmtHoras(x.horas)} ${x.momento === 'ENTRADA' ? 'entrada' : 'saída'})`);
   }
   // Ordem: pela primeira folga; empate por nome.
   const linhas = [...porPessoa]
-    .map(([id, datas]) => ({ nome: porId(state.colaboradores, id)?.nome || `#${id}`, datas: datas.sort() }))
-    .sort((a, b) => a.datas[0].localeCompare(b.datas[0]) || a.nome.localeCompare(b.nome, 'pt-BR'))
-    .map(({ nome, datas }) => `* ${nome.toUpperCase()}: ${datas.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(', ')}`);
+    .map(([id, itens]) => ({ nome: porId(state.colaboradores, id)?.nome || `#${id}`, itens: itens.sort((a, b) => a.data.localeCompare(b.data)) }))
+    .sort((a, b) => a.itens[0].data.localeCompare(b.itens[0].data) || a.nome.localeCompare(b.nome, 'pt-BR'))
+    .map(({ nome, itens }) => `* ${nome.toUpperCase()}: ${itens.map(({ data: d, sufixo }) => `${d.slice(8)}/${d.slice(5, 7)}${sufixo}`).join(', ')}`);
   return ['🚨 *PESSOAL ATENÇÃO A ESCALA DE COMPENSAÇÃO* 🚨', ...(linhas.length ? linhas : ['* Nenhuma folga de compensação no período.'])].join('\n');
 }
 
@@ -2927,12 +2952,23 @@ function dialogBancoHoras(c) {
             <button type="button" class="ghost icon" data-bh-pag="1" title="Próximo" aria-label="Próximo">›</button>
           </div>
           <section class="bh-acao" ${paginaAcao === 0 ? '' : 'hidden'}>
+            <label class="field"><span>Tipo de desconto</span><select data-bh-folga-modo>
+              <option value="DIA">Dia completo (${fmtHoras(HORAS_POR_DIA_BH)})</option>
+              <option value="PARCIAL">Parcial (horas na entrada ou na saída)</option>
+            </select></label>
             <label class="field"><span>Dia</span><input type="date" data-bh-folga-data></label>
+            <div class="row" data-bh-parcial hidden>
+              <label class="field"><span>Horas a descontar</span><input type="text" inputmode="decimal" data-bh-folga-horas placeholder="Ex.: 1 ou 2,5"></label>
+              <label class="field"><span>Horário do desconto</span><select data-bh-folga-momento>
+                <option value="ENTRADA">Entrada (entra mais tarde)</option>
+                <option value="SAIDA">Saída (sai mais cedo)</option>
+              </select></label>
+            </div>
             <label class="field"><span>Observação</span><input type="text" maxlength="200" data-bh-folga-obs placeholder="Opcional"></label>
             <div class="bh-acao-botoes">
               <button type="button" class="primary" data-bh-agendar>Agendar folga</button>
             </div>
-            <p class="hint">Desconta ${fmtHoras(HORAS_POR_DIA_BH)} (1 dia) e marca o dia em roxo na escala.</p>
+            <p class="hint" data-bh-folga-dica>Desconta ${fmtHoras(HORAS_POR_DIA_BH)} (1 dia) e marca o dia em roxo na escala.</p>
           </section>
           <section class="bh-acao" ${paginaAcao === 1 ? '' : 'hidden'}>
             <label class="field"><span>Horas</span><input type="text" inputmode="decimal" data-bh-horas placeholder="Ex.: 8 ou 160"></label>
@@ -2957,7 +2993,11 @@ function dialogBancoHoras(c) {
                   .map(
                     (l) =>
                       `<tr><td class="muted">${
-                        l.tipo === 'FOLGA' ? '<i class="bh-ponto-folga" title="Agendada pelo Banco de Horas (está roxa na escala)"></i>' : ''
+                        l.tipo === 'FOLGA'
+                          ? '<i class="bh-ponto-folga" title="Agendada pelo Banco de Horas (está roxa na escala)"></i>'
+                          : l.tipo === 'FOLGA_PARCIAL'
+                            ? `<i class="bh-ponto-folga meio" title="Compensação parcial na ${l.momento === 'ENTRADA' ? 'entrada' : 'saída'} (meio quadrado roxo na escala)"></i>`
+                            : ''
                       }${l.data.split('-').reverse().join('/')}</td><td class="bh-num ${
                         l.horas < 0 ? 'neg' : 'pos'
                       }">${fmtHorasSinal(l.horas)}</td><td>${esc(l.observacao || '')}</td><td class="actions"><button type="button" class="ghost danger icon" data-bh-del="${
@@ -3078,21 +3118,36 @@ function dialogBancoHoras(c) {
     });
     // Agendar folga: escolhe o dia e desconta 1 dia (8h) fixo do saldo — sem precisar digitar horas.
     // É o único jeito de marcar FOLGA_BANCO (roxa) na escala; o pincel e o clique na célula não oferecem essa opção.
+    // Tipo de desconto: Dia completo (quadrado roxo inteiro) ou Parcial (horas + entrada/saída, meio quadrado).
+    const modoEl = dialogForm.querySelector('[data-bh-folga-modo]');
+    modoEl.onchange = () => {
+      const parcial = modoEl.value === 'PARCIAL';
+      dialogForm.querySelector('[data-bh-parcial]').hidden = !parcial;
+      dialogForm.querySelector('[data-bh-folga-dica]').textContent = parcial
+        ? 'Desconta as horas informadas; a pessoa trabalha no dia e a escala mostra meio quadrado roxo (em cima = entrada, embaixo = saída).'
+        : `Desconta ${fmtHoras(HORAS_POR_DIA_BH)} (1 dia) e marca o dia em roxo na escala.`;
+    };
     $('[data-bh-agendar]', dialogForm).onclick = async () => {
       const data = dialogForm.querySelector('[data-bh-folga-data]').value;
       const observacao = dialogForm.querySelector('[data-bh-folga-obs]').value;
+      const modo = modoEl.value;
       const erroEl = dialogForm.querySelector('[data-bh-erro]');
       erroEl.textContent = '';
       if (!data) {
         erroEl.textContent = 'Escolha o dia da folga.';
         return;
       }
+      const corpo = { colaborador_id: c.id, data, observacao, modo };
+      if (modo === 'PARCIAL') {
+        corpo.horas = dialogForm.querySelector('[data-bh-folga-horas]').value;
+        corpo.momento = dialogForm.querySelector('[data-bh-folga-momento]').value;
+      }
       try {
-        await api('POST', '/banco-horas/agendar-folga', { colaborador_id: c.id, data, observacao });
+        await api('POST', '/banco-horas/agendar-folga', corpo);
         await carregarBancoHoras();
         render();
         renderBancoHoras();
-        toast('Folga agendada — já aparece roxa na escala.');
+        toast(modo === 'PARCIAL' ? 'Compensação parcial agendada — meio quadrado roxo na escala.' : 'Folga agendada — já aparece roxa na escala.');
       } catch (err) {
         erroEl.textContent = err.message;
       }
@@ -3102,7 +3157,9 @@ function dialogBancoHoras(c) {
         const mensagem =
           btn.dataset.bhDelTipo === 'FOLGA'
             ? 'Excluir esta folga agendada? Ela também vai sumir (roxa) da escala.'
-            : 'Excluir este lançamento?';
+            : btn.dataset.bhDelTipo === 'FOLGA_PARCIAL'
+              ? 'Excluir esta compensação parcial? O meio quadrado roxo também sai da escala.'
+              : 'Excluir este lançamento?';
         if (!confirm(mensagem)) return;
         try {
           await api('DELETE', `/banco-horas/${btn.dataset.bhDel}`);
