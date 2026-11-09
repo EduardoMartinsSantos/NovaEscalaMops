@@ -1045,7 +1045,7 @@ function renderLegenda() {
     quadrado('TRABALHO', 'q-trabalho', 'Trabalho') +
     quadrado('FOLGA', 'q-folga', 'Folga', 'Folga — na escala ou no sobreaviso (no sobreaviso, substitui as horas do dia)') +
     quadrado('FERIAS', 'q-ferias', 'Férias') +
-    quadrado('', 'q-limpar', 'Limpar', 'Limpar — apaga o lançamento do dia') +
+    quadrado('', 'q-limpar', 'Limpar', 'Limpar — na escala volta ao turno normal; no sobreaviso apaga as horas do dia') +
     (state.torres.some((t) => t.permite_sobreaviso && t.ativo && t.sobreaviso_visivel)
       ? `<span class="legend-sep"></span>` +
         // Série variável: o pincel e a configuração (⚙) num só botão dividido.
@@ -1101,8 +1101,9 @@ function opcoesCelula() {
 // "T:<id>" | FOLGA | FERIAS | ATESTADO | "" → corpo da API
 // "Trabalho" usa o turno do cadastro — no sábado/domingo, o turno de fim de semana (se a pessoa tiver).
 function decodificar(v, colaboradorId, data) {
-  if (!v) return { tipo: null, turno_id: null };
-  if (v === 'TRABALHO') {
+  // "" (Limpar) também volta ao trabalho normal: célula vazia já renderiza como folga, então
+  // apagar o lançamento de quem trabalha não devolvia o verde — agora Limpar = Trabalho aqui.
+  if (!v || v === 'TRABALHO') {
     // Quem não participa dos fins de semana recebe folga no sábado e no domingo.
     const turno = turnoDoDia(porId(state.colaboradores, colaboradorId), data);
     return turno ? { tipo: 'TURNO', turno_id: turno } : { tipo: 'FOLGA', turno_id: null };
