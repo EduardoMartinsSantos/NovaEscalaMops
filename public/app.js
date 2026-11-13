@@ -637,6 +637,7 @@ async function exportarFolgasPlanejadas() {
     .map(([id, itens]) => ({ nome: porId(state.colaboradores, id)?.nome || '', itens: itens.sort((a, b) => (a.data < b.data ? -1 : 1)) }))
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   const maxDias = Math.max(...linhasColab.map((l) => l.itens.length));
+  const hoje = hojeStr();
 
   const blob = criarXlsx({
     aba: `Folgas ${state.mes}`,
@@ -652,7 +653,7 @@ async function exportarFolgasPlanejadas() {
       ...linhasColab.map(({ nome, itens }) => ({
         celulas: [
           { v: nome, e: { bold: true, align: 'left' } },
-          ...itens.map((it) => ({ v: it.texto })),
+          ...itens.map((it) => ({ v: it.texto, e: it.data <= hoje ? XL.trabalho : {} })),
           ...Array.from({ length: maxDias - itens.length }, () => ({ v: '' })),
         ],
       })),
