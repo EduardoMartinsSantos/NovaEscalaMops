@@ -334,6 +334,7 @@ function viewEscala() {
         <button class="icon" id="cfg-colunas" title="Escolher as colunas exibidas" aria-label="Escolher as colunas exibidas">⚙</button>
         <button id="btn-excel" class="primary">Exportar Excel</button>
         <a class="btn" id="btn-exportar" title="Exportar em CSV (texto simples)">CSV</a>
+        ${state.usuario?.admin ? '<button class="ghost" id="btn-folgas-planejadas" title="Folgas e compensações agendadas pelo Banco de Horas neste mês">⤓ Folgas planejadas</button>' : ''}
       </div>
     </div>
     <div class="legend" id="legenda"></div>
@@ -428,6 +429,8 @@ async function trocarMes(mes) {
 async function carregarEscala() {
   $('#btn-exportar').href = `/api/escala/exportar?mes=${state.mes}`;
   $('#btn-excel').onclick = exportarExcel;
+  const btnFolgas = $('#btn-folgas-planejadas');
+  if (btnFolgas) btnFolgas.onclick = exportarFolgasPlanejadas;
   try {
     state.escala = await api('GET', `/escala?mes=${state.mes}`);
     renderGrade();
@@ -603,6 +606,62 @@ function exportarExcel() {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `escala-${state.mes}.xlsx`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  toast('Excel gerado.');
+}
+
+// ----- Exportar Excel: folgas e compensações agendadas pelo Banco de Horas no mês (uma coluna por dia de folga) -----
+
+async function exportarFolgasPlanejadas() {
+  let lancamentos;
+  try {
+    lancamentos = await api('GET', '/banco-horas');
+  } catch (err) {
+    toast(err.message, true);
+    return;
+  }
+  const porColab = new Map();
+  for (const l of lancamentos) {
+    if (l.data.slice(0, 7) !== state.mes || (l.tipo !== 'FOLGA' && l.tipo !== 'FOLGA_PARCIAL')) continue;
+    const dia = `${l.data.slice(8, 10)}/${l.data.slice(5, 7)}`;
+    const texto = l.tipo === 'FOLGA_PARCIAL' ? `${dia} - ${fmtHoras(Math.abs(l.horas))}` : dia;
+    if (!porColab.has(l.colaborador_id)) porColab.set(l.colaborador_id, []);
+    porColab.get(l.colaborador_id).push({ data: l.data, texto });
+  }
+  if (!porColab.size) return toast('Nenhuma folga planejada neste mês.', true);
+
+  const linhasColab = [...porColab.entries()]
+    .map(([id, itens]) => ({ nome: porId(state.colaboradores, id)?.nome || '', itens: itens.sort((a, b) => (a.data < b.data ? -1 : 1)) }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const maxDias = Math.max(...linhasColab.map((l) => l.itens.length));
+
+  const blob = criarXlsx({
+    aba: `Folgas ${state.mes}`,
+    colunas: [{ largura: 32 }, ...Array.from({ length: maxDias }, () => ({ largura: 14 }))],
+    linhas: [
+      {
+        altura: 22,
+        celulas: [
+          { v: 'NOME', e: { ...XL.cabecalho, align: 'left' } },
+          ...Array.from({ length: maxDias }, (_, i) => ({ v: `DIA ${i + 1}`, e: XL.cabecalho })),
+        ],
+      },
+      ...linhasColab.map(({ nome, itens }) => ({
+        celulas: [
+          { v: nome, e: { bold: true, align: 'left' } },
+          ...itens.map((it) => ({ v: it.texto })),
+          ...Array.from({ length: maxDias - itens.length }, () => ({ v: '' })),
+        ],
+      })),
+    ],
+    congelar: { linhas: 1, colunas: 1 },
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `folgas-planejadas-${state.mes}.xlsx`;
   document.body.append(a);
   a.click();
   a.remove();
