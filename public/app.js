@@ -446,9 +446,10 @@ function passaFiltroEscala(c, ignorar) {
   return (!busca || c.nome.toLowerCase().includes(busca)) && passaFiltros(c, COLUNAS_ESCALA, state.filtrosEscala, ignorar);
 }
 
-// Colaborador conta no mês (escala e sobreaviso) entre o Mês início e o Mês fim. Com Mês fim, aparece até ele
+// Colaborador aparece na escala entre o Mês início na escala e o Mês fim. Com Mês fim, aparece até ele
 // mesmo desativado; sem Mês fim, só enquanto estiver ativo.
-const ativoNoMes = (c, mes) => (!c.mes_inicio || c.mes_inicio <= mes) && (c.mes_fim ? mes <= c.mes_fim : !!c.ativo);
+const ativoNoMes = (c, mes) =>
+  (!c.mes_inicio_escala || c.mes_inicio_escala <= mes) && (c.mes_fim ? mes <= c.mes_fim : !!c.ativo);
 const naEscalaNoMes = (c, mes) => !!c.na_escala && ativoNoMes(c, mes);
 
 function colaboradoresVisiveis() {
@@ -2149,7 +2150,12 @@ const COLUNAS_COLAB = {
   nome: { rotulo: 'Nome', valor: (c) => c.nome },
   email: { rotulo: 'E-mail', valor: (c) => c.email || '' },
   telefone: { rotulo: 'Telefone', valor: (c) => c.telefone || '' },
-  mes_inicio: { rotulo: 'Mês início', titulo: 'A partir de qual mês aparece na escala', valor: (c) => c.mes_inicio || '' },
+  mes_inicio: { rotulo: 'Mês início', titulo: 'Mês de contratação; também é o início do sobreaviso quando esse campo está vazio', valor: (c) => c.mes_inicio || '' },
+  mes_inicio_escala: {
+    rotulo: 'Mês início na escala',
+    titulo: 'A partir de qual mês aparece na escala',
+    valor: (c) => c.mes_inicio_escala || '',
+  },
   mes_fim: {
     rotulo: 'Mês fim',
     titulo: 'Último mês em que aparece na escala e no sobreaviso (mesmo desativado); vazio = enquanto ativo',
@@ -2362,7 +2368,10 @@ function exportarColaboradores() {
   const lista = colaboradoresFiltrados();
   if (!lista.length) return toast('Nenhum colaborador para exportar.', true);
   const chaves = Object.keys(COLUNAS_COLAB);
-  const larguras = { nome: 38, email: 40, telefone: 18, mes_inicio: 14, mes_fim: 14, sobreaviso_mes_inicio: 16, sobreaviso_mes_fim: 16 };
+  const larguras = {
+    nome: 38, email: 40, telefone: 18, mes_inicio: 14, mes_inicio_escala: 18, mes_fim: 14,
+    sobreaviso_mes_inicio: 16, sobreaviso_mes_fim: 16,
+  };
   const blob = criarXlsx({
     aba: 'Colaboradores',
     colunas: chaves.map((k) => ({ largura: larguras[k] || 13 })),
@@ -2453,6 +2462,7 @@ function linhaColaborador(c, torresSA, travado) {
     ${celulaTexto(c, 'email', 'w-email', 'email', travado)}
     ${celulaTexto(c, 'telefone', 'w-tel', 'tel', travado)}
     ${celulaTexto(c, 'mes_inicio', 'w-mes-inicio', 'month', travado)}
+    ${celulaTexto(c, 'mes_inicio_escala', 'w-mes-inicio', 'month', travado)}
     ${celulaTexto(c, 'mes_fim', 'w-mes-inicio', 'month', travado)}
     ${celulaSelect(c, 'torre_id', torresReais(), (t) => t.codigo, undefined, travado)}
     ${celulaSelect(c, 'turno_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`, undefined, travado)}
@@ -2493,7 +2503,7 @@ function renderColaboradores() {
       <th class="sel"><input type="checkbox" id="sel-todos" title="Selecionar todos os exibidos" ${
         marcadosVisiveis === lista.length ? 'checked' : ''
       }></th>
-      ${['nome', 'email', 'telefone', 'mes_inicio', 'mes_fim', 'torre', 'turno', 'turno_fds', 'mesa', 'contrato', 'sobreaviso', 'sobreaviso_mes_inicio', 'sobreaviso_mes_fim', 'ativo', 'na_escala']
+      ${['nome', 'email', 'telefone', 'mes_inicio', 'mes_inicio_escala', 'mes_fim', 'torre', 'turno', 'turno_fds', 'mesa', 'contrato', 'sobreaviso', 'sobreaviso_mes_inicio', 'sobreaviso_mes_fim', 'ativo', 'na_escala']
         .map(thFiltroColab)
         .join('')}${state.usuario?.admin ? '<th>Acesso</th>' : ''}<th></th>
     </tr></thead><tbody>${lista
@@ -2743,7 +2753,12 @@ function formColaborador(c = null) {
         <label class="field"><span>Telefone</span><input name="telefone" type="tel" maxlength="30" placeholder="(11) 99999-9999" value="${esc(c?.telefone)}"></label>
       </div>
       <div class="row">
-        <label class="field"><span>Mês início</span><input name="mes_inicio" type="month" value="${esc(c?.mes_inicio)}" title="A partir de qual mês aparece na escala; vazio = sem restrição"></label>
+        <label class="field"><span>Mês início</span><input name="mes_inicio" type="month" value="${esc(c?.mes_inicio)}" title="Mês de contratação; também é o início do sobreaviso quando o campo abaixo está vazio"></label>
+        <label class="field"><span>Mês início na escala</span><input name="mes_inicio_escala" type="month" value="${esc(
+          c?.mes_inicio_escala
+        )}" title="A partir de qual mês aparece na escala; vazio = sem restrição"></label>
+      </div>
+      <div class="row">
         <label class="field"><span>Mês fim</span><input name="mes_fim" type="month" value="${esc(
           c?.mes_fim
         )}" title="Último mês em que aparece na escala e no sobreaviso, mesmo desativado; vazio = enquanto estiver ativo"></label>
@@ -2803,6 +2818,7 @@ function formColaborador(c = null) {
         email: valor(form, 'email'),
         telefone: valor(form, 'telefone'),
         mes_inicio: valor(form, 'mes_inicio'),
+        mes_inicio_escala: valor(form, 'mes_inicio_escala'),
         mes_fim: valor(form, 'mes_fim'),
         sobreaviso_mes_inicio: valor(form, 'sobreaviso_mes_inicio'),
         sobreaviso_mes_fim: valor(form, 'sobreaviso_mes_fim'),
