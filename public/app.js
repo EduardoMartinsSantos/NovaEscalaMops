@@ -124,6 +124,7 @@ const state = {
   bancoHoras: null, // lançamentos do banco de horas (carregado ao abrir a tela)
   bhSaldos: null, // saldos iniciais mensais do banco de horas ({ colaborador_id, mes, saldo_inicial })
   filtroBH: { busca: '' },
+  filtrosBH: {}, // filtros de coluna (torre, turno) da tabela do Banco de Horas
 };
 
 const porId = (lista, id) => lista.find((x) => x.id === id);
@@ -2831,6 +2832,21 @@ function formColaborador(c = null) {
 
 const HORAS_POR_DIA_BH = 8; // 1 dia de folga, para o botão "Agendar folga"
 
+// Colunas filtráveis da tabela do Banco de Horas (nome já tem busca por texto).
+const COLUNAS_BH = {
+  torre: COLUNAS_ESCALA.torre,
+  turno: COLUNAS_ESCALA.turno,
+};
+
+function passaFiltroBH(c, ignorar) {
+  return passaFiltros(c, COLUNAS_BH, state.filtrosBH, ignorar);
+}
+
+function thFiltroBH(chave) {
+  const col = COLUNAS_BH[chave];
+  return `<th class="th-filtro">${col.rotulo} ${botaoFiltro(chave, state.filtrosBH)}</th>`;
+}
+
 async function carregarBancoHoras() {
   [state.bancoHoras, state.bhSaldos] = await Promise.all([api('GET', '/banco-horas'), api('GET', '/banco-horas/saldos')]);
 }
@@ -2888,7 +2904,7 @@ function renderBancoHoras() {
   // Maior saldo final primeiro; empate por nome.
   const saldos = new Map(state.colaboradores.map((c) => [c.id, saldoBH(c.id, mes)]));
   const lista = state.colaboradores
-    .filter((c) => !busca || c.nome.toLowerCase().includes(busca))
+    .filter((c) => (!busca || c.nome.toLowerCase().includes(busca)) && passaFiltroBH(c))
     .sort((a, b) => saldos.get(b.id) - saldos.get(a.id) || a.nome.localeCompare(b.nome, 'pt-BR'));
   if (!lista.length) {
     el.innerHTML = `<div class="empty">${state.colaboradores.length ? 'Nenhum colaborador encontrado.' : 'Nenhum colaborador cadastrado ainda.'}</div>`;
@@ -2896,7 +2912,7 @@ function renderBancoHoras() {
   }
   const classe = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : 'muted');
   el.innerHTML = `<table class="list bh-tabela"><thead><tr>
-      <th>Nome</th><th>Torre</th><th>Turno</th><th title="Saldo inicial do mês vigente + lançamentos e folgas do mês">Saldo Atual</th><th title="A cada 8h de saldo, 1 dia de folga">Dias</th><th></th>
+      <th>Nome</th>${thFiltroBH('torre')}${thFiltroBH('turno')}<th title="Saldo inicial do mês vigente + lançamentos e folgas do mês">Saldo Atual</th><th title="A cada 8h de saldo, 1 dia de folga">Dias</th><th></th>
     </tr></thead><tbody>${lista
       .map((c) => {
         const total = saldos.get(c.id);
@@ -2913,6 +2929,21 @@ function renderBancoHoras() {
       })
       .join('')}</tbody></table>`;
   el.onclick = (e) => {
+    const bf = e.target.closest('[data-filtro]');
+    if (bf) {
+      const chave = bf.dataset.filtro;
+      const col = COLUNAS_BH[chave];
+      return abrirFiltro(bf, {
+        titulo: col.rotulo,
+        valores: state.colaboradores.filter((c) => passaFiltroBH(c, chave)).map(col.valor),
+        selecionados: state.filtrosBH[chave],
+        aoAplicar(sel) {
+          if (sel) state.filtrosBH[chave] = sel;
+          else delete state.filtrosBH[chave];
+          renderBancoHoras();
+        },
+      });
+    }
     const b = e.target.closest('[data-bh-abrir]');
     if (b) dialogBancoHoras(porId(state.colaboradores, Number(b.dataset.bhAbrir)));
   };
