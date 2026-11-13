@@ -66,6 +66,7 @@ const ORDEM_PADRAO = Object.keys(PADROES);
 const AUSENCIAS = {
   FOLGA: { sigla: 'F', nome: 'Folga', cls: 'folga' },
   FERIAS: { sigla: 'FE', nome: 'Férias', cls: 'ferias' },
+  FERIAS_PJ: { sigla: 'FE', nome: 'Férias', cls: 'ferias' },
   ATESTADO: { sigla: 'AT', nome: 'Atestado', cls: 'atestado' },
 };
 
@@ -125,6 +126,8 @@ const state = {
   bhSaldos: null, // saldos iniciais mensais do banco de horas ({ colaborador_id, mes, saldo_inicial })
   filtroBH: { busca: '' },
   filtrosBH: {}, // filtros de coluna (torre, turno) da tabela do Banco de Horas
+  filtroFPJ: { busca: '' },
+  filtrosFPJ: {}, // filtros de coluna (torre, turno) da tabela de Férias PJ
 };
 
 const porId = (lista, id) => lista.find((x) => x.id === id);
@@ -264,6 +267,7 @@ const VIEWS = {
   escala: viewEscala,
   colaboradores: viewColaboradores,
   'banco-horas': viewBancoHoras,
+  'ferias-pj': viewFeriasPj,
   cadastros: () => viewCadastros(),
   // Endereços antigos de cada cadastro: abrem a tela Cadastros já no bloco.
   torres: () => viewCadastros('torres'),
@@ -286,8 +290,8 @@ function rota() {
   }
   const nome = location.hash.slice(1);
   let view = VIEWS[nome] ? nome : 'escala';
-  // Colaboradores e Banco de Horas são só para admins.
-  if ((view === 'colaboradores' || view === 'banco-horas') && !state.usuario.admin) {
+  // Colaboradores, Banco de Horas e Férias PJ são só para admins.
+  if ((view === 'colaboradores' || view === 'banco-horas' || view === 'ferias-pj') && !state.usuario.admin) {
     view = 'escala';
     history.replaceState(null, '', '#escala');
   }
@@ -516,7 +520,7 @@ function exportarExcel() {
     if (x.tipo === 'TURNO') return { v: textoPlanilha(x, c), e: XL.trabalho };
     if (x.tipo === 'FOLGA') return { v: '', e: XL.folga };
     if (x.tipo === 'FOLGA_BANCO') return { v: '', e: XL.folgaBanco };
-    return { v: AUSENCIAS[x.tipo].nome.toUpperCase(), e: x.tipo === 'FERIAS' ? XL.ferias : XL.atestado };
+    return { v: AUSENCIAS[x.tipo].nome.toUpperCase(), e: x.tipo === 'FERIAS' || x.tipo === 'FERIAS_PJ' ? XL.ferias : XL.atestado };
   };
 
   const cabecalho = (ultima) =>
@@ -572,7 +576,7 @@ function exportarExcel() {
     tituloBloco('SOBREAVISO');
     cabecalho('HORAS');
   }
-  const ausente = (id, d) => ['FERIAS', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
+  const ausente = (id, d) => ['FERIAS', 'FERIAS_PJ', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
   for (const { torre: t, porPessoa, cobertos, habilitados, descobertos, totalTorre, totalDe } of secoes) {
     const titulo =
       `Sobreaviso ${t.codigo} (${habilitados.length}${totalTorre ? ` · ${fmtHoras(totalTorre)}` : ''})` +
@@ -586,7 +590,7 @@ function exportarExcel() {
           ...dias.map((d) => {
             const s = porPessoa.get(`${c.id}|${d}`);
             if (s?.tipo === 'FOLGA') return { v: '', e: XL.folga };
-            if (s?.tipo === 'FERIAS') return { v: 'FÉRIAS', e: XL.ferias };
+            if (s?.tipo === 'FERIAS' || s?.tipo === 'FERIAS_PJ') return { v: 'FÉRIAS', e: XL.ferias };
             if (s) return { v: s.horas != null ? fmtHoras(s.horas) : 'SOBREAVISO', e: corSA };
             return ausente(c.id, d) ? { v: '', e: XL.ausente } : vazioDoDia(d);
           }),
@@ -699,7 +703,10 @@ function nomePlanilha(c, { escala, horario, arrastavel } = {}) {
 function classePlanilha(cel) {
   if (!cel) return 'p-folga';
   // FOLGA_BANCO: folga financiada pelo banco de horas (roxa) — só criada pelo painel de Banco de Horas.
-  return { TURNO: 'p-trab', FOLGA: 'p-folga', FOLGA_BANCO: 'p-folga-banco', FERIAS: 'p-ferias', ATESTADO: 'p-atestado' }[cel.tipo];
+  // FERIAS_PJ: férias agendadas pelo painel de Férias PJ — mesma cor visual da Férias manual.
+  return {
+    TURNO: 'p-trab', FOLGA: 'p-folga', FOLGA_BANCO: 'p-folga-banco', FERIAS: 'p-ferias', FERIAS_PJ: 'p-ferias', ATESTADO: 'p-atestado',
+  }[cel.tipo];
 }
 
 const horarioDoTurno = (t) => (t ? `${t.inicio} às ${t.fim}` : '');
@@ -760,6 +767,7 @@ function tituloCelula(cel) {
     return t ? `${t.codigo} · ${horarioDoTurno(t)}` : '';
   }
   if (cel.tipo === 'FOLGA_BANCO') return 'Folga (banco de horas)';
+  if (cel.tipo === 'FERIAS_PJ') return 'Férias (PJ)';
   return AUSENCIAS[cel.tipo].nome;
 }
 
@@ -1007,7 +1015,7 @@ function renderGrade() {
     html += `<div class="tabela-titulo">Sobreaviso</div>
       <table class="grid sa-tabela planilha"><thead><tr><th class="name">${cabSA}</th>${cabDias}</tr></thead><tbody>`;
   }
-  const ausencia = (id, d) => ['FERIAS', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
+  const ausencia = (id, d) => ['FERIAS', 'FERIAS_PJ', 'ATESTADO'].includes(cel.get(`${id}|${d}`)?.tipo);
   for (const { torre: t, porPessoa, cobertos, habilitados, descobertos, totalTorre, totalDe } of secoes) {
     html += `<tr class="group sa-group"><td class="name">Sobreaviso ${tagSobreaviso(t)} <span class="muted">(${habilitados.length}${
       totalTorre ? ` · ${fmtHoras(totalTorre)}` : ''
@@ -1895,10 +1903,12 @@ function renderDashboard(escala, fds) {
   const data = state.dashData;
   const equipe = state.colaboradores.filter((c) => naEscalaNoMes(c, data.slice(0, 7)));
   const cel = new Map(escala.celulas.filter((x) => x.data === data).map((x) => [x.colaborador_id, x]));
-  // FOLGA_BANCO conta como folga aqui (a cor roxa só aparece na escala, não no dashboard).
+  // FOLGA_BANCO conta como folga e FERIAS_PJ como férias aqui (cor própria só na escala, não no dashboard).
   const situacao = (c) => {
     const t = cel.get(c.id)?.tipo || 'FOLGA';
-    return t === 'FOLGA_BANCO' ? 'FOLGA' : t;
+    if (t === 'FOLGA_BANCO') return 'FOLGA';
+    if (t === 'FERIAS_PJ') return 'FERIAS';
+    return t;
   };
 
   // Torres na ordem do cadastro; quem não tem torre vai num grupo à parte.
@@ -1966,7 +1976,7 @@ function renderDashboard(escala, fds) {
     }`;
   const trabalhando = equipe.filter((c) => situacao(c) === 'TURNO').sort(porHorario);
   const folga = equipe.filter((c) => situacao(c) === 'FOLGA').sort(porTorreNome);
-  const ausentes = equipe.filter((c) => ['FERIAS', 'ATESTADO'].includes(situacao(c))).sort(porTorreNome);
+  const ausentes = equipe.filter((c) => ['FERIAS', 'FERIAS_PJ', 'ATESTADO'].includes(situacao(c))).sort(porTorreNome);
   const fdsCard = cardFimDeSemana(fds, grupos);
 
   $('#dash').innerHTML = `
@@ -3285,6 +3295,206 @@ function dialogBancoHoras(c) {
 }
 
 // =====================================================================
+// FÉRIAS PJ
+// =====================================================================
+
+// Colunas filtráveis da tabela de Férias PJ (nome já tem busca por texto).
+const COLUNAS_FPJ = {
+  torre: COLUNAS_ESCALA.torre,
+  turno: COLUNAS_ESCALA.turno,
+};
+
+function passaFiltroFPJ(c, ignorar) {
+  return passaFiltros(c, COLUNAS_FPJ, state.filtrosFPJ, ignorar);
+}
+
+function thFiltroFPJ(chave) {
+  const col = COLUNAS_FPJ[chave];
+  return `<th class="th-filtro">${col.rotulo} ${botaoFiltro(chave, state.filtrosFPJ)}</th>`;
+}
+
+const ehPJ = (c) => codigoDe(state.contratos, c.contrato_id).toUpperCase() === 'PJ';
+const colaboradoresPJ = () => state.colaboradores.filter(ehPJ);
+
+async function carregarFeriasPj() {
+  state.feriasPj = await api('GET', '/ferias-pj');
+}
+
+// Meses completos entre o Mês início do colaborador e o mês de referência (ambos AAAA-MM).
+function mesesDesde(mesInicio, mesRef) {
+  if (!mesInicio) return 0;
+  const [ai, mi] = mesInicio.split('-').map(Number);
+  const [ar, mr] = mesRef.split('-').map(Number);
+  return Math.max(0, (ar - ai) * 12 + (mr - mi));
+}
+// 15 dias por ano completo desde o Mês início, acumulativo, sem vencimento.
+const anosFeriasPj = (c) => Math.floor(mesesDesde(c.mes_inicio, mesAtual()) / 12);
+const diasAcumFeriasPj = (c) => anosFeriasPj(c) * 15;
+const feriasPjDe = (colaboradorId) => (state.feriasPj || []).filter((f) => f.colaborador_id === colaboradorId);
+const diasUsadosFeriasPj = (colaboradorId) => feriasPjDe(colaboradorId).reduce((n, f) => n + f.dias, 0);
+const saldoFeriasPj = (c) => diasAcumFeriasPj(c) - diasUsadosFeriasPj(c.id);
+
+function viewFeriasPj() {
+  const f = state.filtroFPJ;
+  main.innerHTML = `
+    <div class="page-head">
+      <div><h1>Férias PJ</h1><p>Saldo acumulado: 15 dias a cada ano completo desde o Mês início, sem vencimento. Só colaboradores com Contrato PJ.</p></div>
+    </div>
+    <div class="toolbar">
+      <input id="busca-fpj" type="search" placeholder="Buscar colaborador…" value="${esc(f.busca)}">
+    </div>
+    <div class="card list-wrap" id="lista-fpj"><div class="empty">Carregando…</div></div>`;
+  $('#busca-fpj').oninput = (e) => {
+    f.busca = e.target.value;
+    renderFeriasPj();
+  };
+  carregarFeriasPj().then(renderFeriasPj).catch((e) => toast(e.message, true));
+}
+
+function renderFeriasPj() {
+  const el = $('#lista-fpj');
+  if (!el) return;
+  const busca = state.filtroFPJ.busca.trim().toLowerCase();
+  const lista = colaboradoresPJ()
+    .filter((c) => (!busca || c.nome.toLowerCase().includes(busca)) && passaFiltroFPJ(c))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  if (!lista.length) {
+    el.innerHTML = `<div class="empty">${colaboradoresPJ().length ? 'Nenhum colaborador encontrado.' : 'Nenhum colaborador com Contrato PJ cadastrado ainda.'}</div>`;
+    return;
+  }
+  el.innerHTML = `<table class="list bh-tabela"><thead><tr>
+      <th>Nome</th>${thFiltroFPJ('torre')}${thFiltroFPJ('turno')}<th title="Mês a partir do qual conta o 1º ano de férias">Mês início</th>
+      <th title="15 dias por ano completo desde o Mês início">Dias acumulados</th><th>Dias usados</th><th>Saldo</th><th></th>
+    </tr></thead><tbody>${lista
+      .map((c) => {
+        const saldo = saldoFeriasPj(c);
+        const n = feriasPjDe(c.id).length;
+        return `<tr class="${c.ativo ? '' : 'inativo'}" data-id="${c.id}">
+          <td>${esc(c.nome)}</td>
+          <td>${tagTorre(porId(state.torres, c.torre_id))}</td>
+          <td>${tagTurno(porId(state.turnos, c.turno_id))}</td>
+          <td>${esc(c.mes_inicio) || '<span class="muted">—</span>'}</td>
+          <td class="bh-num">${diasAcumFeriasPj(c)}</td>
+          <td class="bh-num">${diasUsadosFeriasPj(c.id)}</td>
+          <td class="bh-num ${classeBH(saldo)}">${saldo}</td>
+          <td class="actions"><button class="ghost" data-fpj-abrir="${c.id}">${n ? 'Ver agendamentos' : 'Agendar férias'}</button></td>
+        </tr>`;
+      })
+      .join('')}</tbody></table>`;
+  el.onclick = (e) => {
+    const bf = e.target.closest('[data-filtro]');
+    if (bf) {
+      const chave = bf.dataset.filtro;
+      const col = COLUNAS_FPJ[chave];
+      return abrirFiltro(bf, {
+        titulo: col.rotulo,
+        valores: colaboradoresPJ().filter((c) => passaFiltroFPJ(c, chave)).map(col.valor),
+        selecionados: state.filtrosFPJ[chave],
+        aoAplicar(sel) {
+          if (sel) state.filtrosFPJ[chave] = sel;
+          else delete state.filtrosFPJ[chave];
+          renderFeriasPj();
+        },
+      });
+    }
+    const b = e.target.closest('[data-fpj-abrir]');
+    if (b) dialogFeriasPj(porId(state.colaboradores, Number(b.dataset.fpjAbrir)));
+  };
+}
+
+// Dialog com o histórico de férias agendadas do colaborador e um formulário para agendar um novo período.
+function dialogFeriasPj(c) {
+  dialog.classList.add('larga');
+  dialog.addEventListener('close', () => dialog.classList.remove('larga'), { once: true });
+  dialogForm.onsubmit = (e) => e.preventDefault();
+  const render = () => {
+    const lista = feriasPjDe(c.id).sort((a, b) => b.id - a.id);
+    const acumulados = diasAcumFeriasPj(c);
+    const usados = diasUsadosFeriasPj(c.id);
+    const saldo = acumulados - usados;
+    dialogForm.innerHTML = `
+      <header class="bh-head">
+        <h2>${esc(c.nome)}</h2>
+        <p class="muted">Férias PJ · Mês início ${c.mes_inicio ? esc(c.mes_inicio) : '—'}</p>
+      </header>
+      <div class="body">
+        <div class="bh-resumo">
+          <div class="bh-kpi"><span>Dias acumulados</span><strong>${acumulados}</strong><small>${anosFeriasPj(c)} ano(s) completo(s)</small></div>
+          <div class="bh-kpi"><span>Dias usados</span><strong>${usados}</strong><small>agendados até hoje</small></div>
+          <div class="bh-kpi bh-kpi-destaque"><span>Saldo</span><strong class="${classeBH(saldo)}">${saldo}</strong><small>dias</small></div>
+        </div>
+
+        <section class="bh-acao">
+          <label class="field"><span>Data início</span><input type="date" data-fpj-inicio></label>
+          <label class="field"><span>Data fim</span><input type="date" data-fpj-fim></label>
+          <label class="field"><span>Observação</span><input type="text" maxlength="200" data-fpj-obs placeholder="Opcional"></label>
+          <div class="bh-acao-botoes">
+            <button type="button" class="primary" data-fpj-agendar>Agendar férias</button>
+          </div>
+          <p class="hint">Marca os dias do intervalo (inclusive fins de semana) como Férias na escala.</p>
+        </section>
+        <p class="form-error" data-fpj-erro></p>
+
+        <section>
+          <span class="bh-rotulo">Histórico de agendamentos${lista.length ? ` <span class="bh-chip">${lista.length}</span>` : ''}</span>
+          ${
+            lista.length
+              ? `<div class="bh-tabela-wrap bh-rolagem"><table class="list bh-historico"><thead><tr><th>Início</th><th>Fim</th><th class="bh-num">Dias</th><th>Observação</th><th></th></tr></thead><tbody>${lista
+                  .map(
+                    (f) =>
+                      `<tr><td>${f.data_inicio.split('-').reverse().join('/')}</td><td>${f.data_fim
+                        .split('-')
+                        .reverse()
+                        .join('/')}</td><td class="bh-num">${f.dias}</td><td>${esc(f.observacao || '')}</td><td class="actions"><button type="button" class="ghost danger icon" data-fpj-del="${
+                        f.id
+                      }" title="Excluir">✕</button></td></tr>`
+                  )
+                  .join('')}</tbody></table></div>`
+              : '<p class="muted vazio">Nenhum agendamento ainda.</p>'
+          }
+        </section>
+      </div>
+      <footer><button type="button" data-cancel>Fechar</button></footer>`;
+    $('[data-cancel]', dialogForm).onclick = () => dialog.close();
+    $('[data-fpj-agendar]', dialogForm).onclick = async () => {
+      const data_inicio = dialogForm.querySelector('[data-fpj-inicio]').value;
+      const data_fim = dialogForm.querySelector('[data-fpj-fim]').value;
+      const observacao = dialogForm.querySelector('[data-fpj-obs]').value;
+      const erroEl = dialogForm.querySelector('[data-fpj-erro]');
+      erroEl.textContent = '';
+      if (!data_inicio || !data_fim) {
+        erroEl.textContent = 'Escolha a data início e a data fim.';
+        return;
+      }
+      try {
+        await api('POST', '/ferias-pj/agendar', { colaborador_id: c.id, data_inicio, data_fim, observacao });
+        await carregarFeriasPj();
+        render();
+        renderFeriasPj();
+        toast('Férias agendadas — já aparecem na escala.');
+      } catch (err) {
+        erroEl.textContent = err.message;
+      }
+    };
+    dialogForm.querySelectorAll('[data-fpj-del]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm('Excluir este agendamento de férias? Ele também vai sumir da escala.')) return;
+        try {
+          await api('DELETE', `/ferias-pj/${btn.dataset.fpjDel}`);
+          await carregarFeriasPj();
+          render();
+          renderFeriasPj();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      };
+    });
+  };
+  render();
+  dialog.showModal();
+}
+
+// =====================================================================
 // CADASTROS: TORRES E TURNOS
 // =====================================================================
 
@@ -3737,8 +3947,8 @@ function telaLogin() {
 function renderUsuario() {
   const el = $('#usuario');
   const u = state.usuario;
-  // Itens "Colaboradores" e "Banco de Horas" do menu só para admins.
-  for (const v of ['colaboradores', 'banco-horas']) {
+  // Itens "Colaboradores", "Banco de Horas" e "Férias PJ" do menu só para admins.
+  for (const v of ['colaboradores', 'banco-horas', 'ferias-pj']) {
     const item = document.querySelector(`nav a[data-view="${v}"]`);
     if (item) item.hidden = !u?.admin;
   }
