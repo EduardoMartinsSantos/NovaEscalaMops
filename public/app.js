@@ -112,6 +112,8 @@ const state = {
   // 'semana' (TC): ciclo alinhado ao dia da semana, entre "De" e "Até". 'serie' (TP): ciclo corrido a partir
   // do dia clicado na escala, sem olhar o dia da semana, até a "Data limite".
   padraoTrabModo: lerPreferencia('padraoTrabModo', 'semana'),
+  // Ligado: dias já marcados como Férias (manual ou PJ) ficam como estão; o padrão pula esses dias.
+  padraoTrabIgnorarFerias: lerPreferencia('padraoTrabIgnorarFerias', '0') === '1',
   filtroColab: { busca: '' },
   filtrosColab: {}, // filtros por coluna da tela de colaboradores (chave → Set de valores permitidos)
   selecionados: new Set(), // ids marcados na lista de colaboradores
@@ -1384,7 +1386,10 @@ function dialogPadraoTrabalho() {
         <button type="button" class="ghost" data-preset="TP">TP</button>
       </div>
       <p class="hint" data-dica></p>
-      <div class="rp-ciclo" data-grade></div>`,
+      <div class="rp-ciclo" data-grade></div>
+      <label class="check"><input type="checkbox" name="ignorar_ferias" ${
+        state.padraoTrabIgnorarFerias ? 'checked' : ''
+      }> Ignorar dias de férias (segue o plano, mas não sobrescreve quem está de férias)</label>`,
     aoAbrir(form) {
       const oculto = form.elements.ciclo;
       const modoOculto = form.elements.modo;
@@ -1438,10 +1443,12 @@ function dialogPadraoTrabalho() {
       state.padraoTrabFim = fimV;
       state.padraoTrabCiclo = valor(form, 'ciclo');
       state.padraoTrabModo = modo;
+      state.padraoTrabIgnorarFerias = marcado(form, 'ignorar_ferias');
       salvarPreferencia('padraoTrabIni', state.padraoTrabIni);
       salvarPreferencia('padraoTrabFim', fimV);
       salvarPreferencia('padraoTrabCiclo', state.padraoTrabCiclo);
       salvarPreferencia('padraoTrabModo', modo);
+      salvarPreferencia('padraoTrabIgnorarFerias', state.padraoTrabIgnorarFerias ? '1' : '0');
       state.pincel = 'PADRAO_TRAB';
       limparPrevia();
       renderLegenda();
@@ -1470,14 +1477,19 @@ async function aplicarPadraoTrabalho(colaboradorId, dataClicada, jaFeitas) {
   if (dias < 1 || dias > 370) return;
   const lista = state.escala.celulas;
   // Dias de folga de banco ficam como estão (fixos) — o padrão pula esses dias; o servidor também.
-  const folgasBanco = new Set(
-    lista.filter((x) => x.colaborador_id === c.id && x.tipo === 'FOLGA_BANCO').map((x) => x.data)
+  // Com "Ignorar férias" ligado, dias de Férias (manual ou PJ) também ficam fixos — o padrão segue o plano
+  // nos outros dias, mas não sobrescreve quem está de férias.
+  const tiposFixos = state.padraoTrabIgnorarFerias
+    ? ['FOLGA_BANCO', 'FERIAS', 'FERIAS_PJ']
+    : ['FOLGA_BANCO'];
+  const diasFixos = new Set(
+    lista.filter((x) => x.colaborador_id === c.id && tiposFixos.includes(x.tipo)).map((x) => x.data)
   );
   const celulas = Array.from({ length: dias }, (_, i) => {
     const data = somarDias(ini, i);
     const trabalho = (serie ? ciclo[i % ciclo.length] : ciclo[(diaSemana(data) + 6) % 7]) === 'T';
     return { colaborador_id: c.id, data, tipo: trabalho ? 'TURNO' : 'FOLGA', turno_id: trabalho ? c.turno_id : null };
-  }).filter((cel) => !folgasBanco.has(cel.data));
+  }).filter((cel) => !diasFixos.has(cel.data));
   if (!celulas.length) return;
   // Atualização otimista: pinta na hora, igual aos outros pincéis; o PUT roda em segundo plano.
   for (const cel of celulas) {
