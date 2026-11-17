@@ -337,6 +337,7 @@ function viewEscala() {
           <span>Agrupar por</span>
           <button data-g="turno" class="${state.agrupar === 'turno' ? 'active' : ''}">Turno</button>
           <button data-g="fds" class="${state.agrupar === 'fds' ? 'active' : ''}" title="Agrupa pelo turno de fim de semana">Fim de semana</button>
+          <button data-g="extra" class="extra ${state.agrupar === 'extra' ? 'active' : ''}" title="Escala Extraordinária: montada à parte em Cadastros, não mexe na escala normal">Extraordinária</button>
         </div>
         <span class="spacer"></span>
         <button class="icon" id="cfg-colunas" title="Escolher as colunas exibidas" aria-label="Escolher as colunas exibidas">⚙</button>
@@ -373,12 +374,19 @@ function viewEscala() {
     renderGrade();
   };
   $('#f-busca').oninput = (e) => ((f.busca = e.target.value), renderGrade());
-  $('#agrupar').onclick = (e) => {
+  $('#agrupar').onclick = async (e) => {
     const b = e.target.closest('button[data-g]');
     if (!b || b.dataset.g === state.agrupar) return;
     state.agrupar = b.dataset.g;
     salvarPreferencia('agrupar', state.agrupar);
     $('#agrupar').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+    if (state.agrupar === 'extra') {
+      try {
+        await carregarEscalaExtraDoMes();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    }
     renderGrade();
   };
 
@@ -441,10 +449,19 @@ async function carregarEscala() {
   if (btnFolgas) btnFolgas.onclick = exportarFolgasPlanejadas;
   try {
     state.escala = await api('GET', `/escala?mes=${state.mes}`);
+    if (state.agrupar === 'extra') await carregarEscalaExtraDoMes();
     renderGrade();
   } catch (e) {
     toast(e.message, true);
   }
+}
+
+// Escala Extraordinária: independente da escala real — só as que cruzam o mês aberto, com turnos/pessoas já resolvidos.
+async function carregarEscalaExtraDoMes() {
+  const inicioMes = `${state.mes}-01`;
+  const fimMes = `${state.mes}-31`; // comparação lexicográfica; "31" serve de teto mesmo em mês mais curto
+  const lista = (await api('GET', '/escalas-extraordinarias')).filter((e) => e.data_inicio <= fimMes && e.data_fim >= inicioMes);
+  state.escalasExtraDoMes = await Promise.all(lista.map((e) => api('GET', `/escalas-extraordinarias/${e.id}`)));
 }
 
 // Busca por nome + filtros por coluna (vale para as três tabelas da escala e para o Excel).
@@ -936,9 +953,46 @@ function secoesSobreaviso() {
     });
 }
 
+const periodoExtraFmt = (e) => {
+  const f = (d) => d.split('-').reverse().join('/');
+  return `${f(e.data_inicio)} a ${f(e.data_fim)}`;
+};
+
+// Cartões "turno → pessoas" das escalas extraordinárias do mês — nunca uma grade dia-a-dia.
+function renderGradeExtra(wrap) {
+  const lista = state.escalasExtraDoMes || [];
+  if (!lista.length) {
+    wrap.innerHTML = '<div class="empty">Nenhuma escala extraordinária neste mês. Crie uma em Cadastros → Escala Extraordinária.</div>';
+    return;
+  }
+  wrap.innerHTML = lista
+    .map((e) => {
+      const grupos = e.turnos.length
+        ? e.turnos
+            .map((t) => {
+              const turno = porId(state.turnos, t.turno_id);
+              const nomes = t.colaborador_ids.map((id) => porId(state.colaboradores, id)?.nome).filter(Boolean);
+              return `<div class="extra-grupo">
+                <div class="extra-grupo-head">${tagTurno(turno)} <span class="muted">(${nomes.length})</span></div>
+                <div class="extra-nomes">${nomes.length ? nomes.map(esc).join(', ') : '<span class="muted">Ninguém ainda</span>'}</div>
+              </div>`;
+            })
+            .join('')
+        : '<p class="muted">Nenhum turno adicionado ainda.</p>';
+      return `<div class="card extra-card">
+        <div class="extra-card-head"><strong>${esc(e.nome || 'Escala extraordinária')}</strong><span class="muted">${esc(periodoExtraFmt(e))}</span></div>
+        ${grupos}
+      </div>`;
+    })
+    .join('');
+}
+
 function renderGrade() {
   const wrap = $('#grid');
-  if (!wrap || !state.escala) return;
+  if (!wrap) return;
+  // Extraordinária: não é grade dia-a-dia nem mexe na escala real, é só "turno → pessoas" do período. Tela à parte.
+  if (state.agrupar === 'extra') return renderGradeExtra(wrap);
+  if (!state.escala) return;
   const { dias, celulas } = state.escala;
   const hoje = hojeStr();
   const cel = new Map(celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
@@ -2366,6 +2420,34 @@ function abrirSeletorMesas(ancora, { selecionados, aoAplicar }) {
       fecharFiltro();
       aoAplicar([...marcados]);
     }
+  };
+  const r = ancora.getBoundingClientRect();
+  const largura = p.offsetWidth || 220;
+  const altura = p.offsetHeight || 240;
+  p.style.left = `${Math.max(8, Math.min(r.left, innerWidth - largura - 8))}px`;
+  p.style.top = `${r.bottom + altura + 8 > innerHeight ? Math.max(8, r.top - altura - 4) : r.bottom + 4}px`;
+}
+
+// Popover de escolha única: clicar num item já aplica, sem OK/Cancelar. Mesmo shell visual/posicionamento
+// do filtro/seletor de mesas acima; usado pela Escala Extraordinária (escolher turno, escolher colaborador).
+function abrirSeletorUnico(ancora, { itens, rotulo, vazio, aoEscolher }) {
+  fecharFiltro();
+  const p = document.createElement('div');
+  p.className = 'filtro-painel';
+  p.innerHTML = `
+    <div class="filtro-lista" data-lista>${
+      itens.length
+        ? itens.map((it, i) => `<button type="button" class="ghost" data-i="${i}">${esc(rotulo(it))}</button>`).join('')
+        : `<div class="muted filtro-vazio">${esc(vazio || 'Nada disponível')}</div>`
+    }</div>`;
+  (ancora.closest('dialog') || document.body).append(p);
+  painelFiltro = p;
+  p.onclick = (e) => {
+    const b = e.target.closest('[data-i]');
+    if (!b) return;
+    const item = itens[Number(b.dataset.i)];
+    fecharFiltro();
+    aoEscolher(item);
   };
   const r = ancora.getBoundingClientRect();
   const largura = p.offsetWidth || 220;
@@ -3979,12 +4061,212 @@ function dialogSerieFixa(t) {
 
 // ---------- Cadastros: todos os blocos numa tela só ----------
 
+// =====================================================================
+// CADASTROS: ESCALA EXTRAORDINÁRIA
+// =====================================================================
+// Independente da escala real (nunca lê/escreve `escala`). É só "neste período, este
+// turno tem estas pessoas"; aparece em Escala de Equipe na aba "Extraordinária".
+
+async function carregarEscalasExtra() {
+  const lista = await api('GET', '/escalas-extraordinarias');
+  state.escalasExtra = await Promise.all(lista.map((e) => api('GET', `/escalas-extraordinarias/${e.id}`)));
+}
+
+function viewEscalasExtraordinarias(alvo = main) {
+  if (!state.escalasExtra) {
+    alvo.innerHTML = '<div class="empty">Carregando…</div>';
+    carregarEscalasExtra()
+      .then(() => viewEscalasExtraordinarias(alvo))
+      .catch((e) => toast(e.message, true));
+    return;
+  }
+  const lista = [...state.escalasExtra].sort((a, b) => b.data_inicio.localeCompare(a.data_inicio));
+  alvo.innerHTML = `
+    <div class="bloco-head">
+      <div><h2>Escala Extraordinária</h2><p class="muted">Escala à parte para um período (mês inteiro ou parcial), sem as regras normais de torre/turno. Não mexe na escala real; aparece em Escala de Equipe, aba "Extraordinária".</p></div>
+      <button class="primary" data-nova-ee>+ Nova escala extraordinária</button>
+    </div>
+    <div class="card list-wrap" data-lista>${
+      lista.length
+        ? `<table class="list"><thead><tr><th>Nome</th><th>Período</th><th>Turnos</th><th>Pessoas</th><th></th></tr></thead>
+          <tbody>${lista
+            .map(
+              (e) => `<tr>
+                <td>${esc(e.nome || '—')}</td>
+                <td class="nowrap">${esc(periodoExtraFmt(e))}</td>
+                <td>${e.turnos.length}</td>
+                <td>${e.turnos.reduce((n, t) => n + t.colaborador_ids.length, 0)}</td>
+                <td class="actions">
+                  <button class="ghost" data-ee-editar="${e.id}">Editar</button>
+                  <button class="ghost danger icon" data-ee-excluir="${e.id}" title="Excluir">✕</button>
+                </td>
+              </tr>`
+            )
+            .join('')}</tbody></table>`
+        : '<div class="empty">Nenhuma escala extraordinária ainda.</div>'
+    }</div>`;
+  $('[data-nova-ee]', alvo).onclick = () => dialogNovaEscalaExtra();
+  alvo.querySelector('[data-lista]').onclick = (e) => {
+    const ed = e.target.closest('[data-ee-editar]');
+    if (ed) return dialogEscalaExtra(state.escalasExtra.find((x) => x.id === Number(ed.dataset.eeEditar)));
+    const del = e.target.closest('[data-ee-excluir]');
+    if (del) {
+      if (!confirm('Excluir esta escala extraordinária e tudo dentro dela?')) return;
+      api('DELETE', `/escalas-extraordinarias/${del.dataset.eeExcluir}`)
+        .then(() => carregarEscalasExtra())
+        .then(atualizarCadastros)
+        .then(() => toast('Escala extraordinária excluída.'))
+        .catch((err) => toast(err.message, true));
+    }
+  };
+}
+
+function dialogNovaEscalaExtra() {
+  abrirDialog({
+    titulo: 'Nova escala extraordinária',
+    corpo: `
+      <label class="field"><span>Nome</span><input name="nome" maxlength="80" placeholder="Opcional"></label>
+      <div class="row">
+        <label class="field"><span>Data início *</span><input name="data_inicio" type="date" required value="${esc(`${state.mes}-01`)}"></label>
+        <label class="field"><span>Data fim *</span><input name="data_fim" type="date" required></label>
+      </div>`,
+    async onSubmit(form) {
+      await api('POST', '/escalas-extraordinarias', {
+        nome: valor(form, 'nome'),
+        data_inicio: valor(form, 'data_inicio'),
+        data_fim: valor(form, 'data_fim'),
+      });
+      await carregarEscalasExtra();
+      atualizarCadastros();
+      toast('Escala extraordinária criada. Clique em Editar para montar os turnos e as pessoas.');
+    },
+  });
+}
+
+// Construtor ("tela lisa"): dialog grande com render() próprio, mesmo padrão de dialogBancoHoras/dialogFeriasPj.
+function dialogEscalaExtra(ee) {
+  dialog.classList.add('larga');
+  dialog.addEventListener('close', () => dialog.classList.remove('larga'), { once: true });
+  dialog.addEventListener('close', () => carregarEscalasExtra().then(atualizarCadastros).catch((e) => toast(e.message, true)), {
+    once: true,
+  });
+  dialogForm.onsubmit = (e) => e.preventDefault();
+  let atual = ee;
+  const render = () => {
+    const usados = new Set(atual.turnos.flatMap((t) => t.colaborador_ids));
+    const turnosDisponiveis = state.turnos.filter((t) => t.ativo && !atual.turnos.some((g) => g.turno_id === t.id));
+    dialogForm.innerHTML = `
+      <header class="bh-head">
+        <h2>${esc(atual.nome || 'Escala extraordinária')}</h2>
+        <p class="muted">${esc(periodoExtraFmt(atual))}</p>
+      </header>
+      <div class="body">
+        <div class="bh-acao-botoes"><button type="button" class="primary" data-ee-add-turno ${
+          turnosDisponiveis.length ? '' : 'disabled'
+        }>+ Adicionar turno</button></div>
+        <p class="form-error" data-ee-erro></p>
+        ${
+          atual.turnos.length
+            ? atual.turnos
+                .map((g) => {
+                  const turno = porId(state.turnos, g.turno_id);
+                  return `<section class="extra-grupo-edicao">
+                    <div class="extra-grupo-head">${tagTurno(turno)}
+                      <button type="button" class="ghost danger icon" data-ee-del-turno="${g.id}" title="Remover turno">✕</button>
+                    </div>
+                    <div class="extra-nomes-edicao">${
+                      g.colaborador_ids
+                        .map((id) => {
+                          const c = porId(state.colaboradores, id);
+                          return `<span class="tag">${esc(c?.nome || '—')} <button type="button" class="chip-remover" data-ee-del-colab="${g.id}:${id}" title="Remover">✕</button></span>`;
+                        })
+                        .join('') || '<span class="muted">Ninguém ainda</span>'
+                    }</div>
+                    <button type="button" class="ghost" data-ee-add-colab="${g.id}">+ Adicionar analista</button>
+                  </section>`;
+                })
+                .join('')
+            : '<p class="muted">Nenhum turno adicionado ainda.</p>'
+        }
+      </div>
+      <footer><button type="button" data-cancel>Fechar</button></footer>`;
+    $('[data-cancel]', dialogForm).onclick = () => dialog.close();
+    const erroEl = dialogForm.querySelector('[data-ee-erro]');
+    const marcarErro = (msg) => (erroEl.textContent = msg);
+    const recarregar = async () => {
+      atual = await api('GET', `/escalas-extraordinarias/${atual.id}`);
+      render();
+    };
+    const addTurnoBtn = dialogForm.querySelector('[data-ee-add-turno]');
+    if (addTurnoBtn && turnosDisponiveis.length) {
+      addTurnoBtn.onclick = (e) => {
+        abrirSeletorUnico(e.currentTarget, {
+          itens: turnosDisponiveis,
+          rotulo: (t) => `${t.codigo} — ${t.nome}`,
+          async aoEscolher(t) {
+            try {
+              await api('POST', `/escalas-extraordinarias/${atual.id}/turnos`, { turno_id: t.id });
+              await recarregar();
+            } catch (err) {
+              marcarErro(err.message);
+            }
+          },
+        });
+      };
+    }
+    dialogForm.querySelectorAll('[data-ee-del-turno]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm('Remover este turno e todo mundo dentro dele desta escala extraordinária?')) return;
+        try {
+          await api('DELETE', `/escalas-extraordinarias/${atual.id}/turnos/${btn.dataset.eeDelTurno}`);
+          await recarregar();
+        } catch (err) {
+          marcarErro(err.message);
+        }
+      };
+    });
+    dialogForm.querySelectorAll('[data-ee-add-colab]').forEach((btn) => {
+      btn.onclick = (e) => {
+        const grupoId = Number(btn.dataset.eeAddColab);
+        const disponiveis = state.colaboradores.filter((c) => !usados.has(c.id)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+        abrirSeletorUnico(e.currentTarget, {
+          itens: disponiveis,
+          rotulo: (c) => c.nome,
+          vazio: 'Nenhum colaborador disponível (todos já estão em algum turno desta escala extraordinária)',
+          async aoEscolher(c) {
+            try {
+              await api('POST', `/escalas-extraordinarias/${atual.id}/turnos/${grupoId}/colaboradores`, { colaborador_id: c.id });
+              await recarregar();
+            } catch (err) {
+              marcarErro(err.message);
+            }
+          },
+        });
+      };
+    });
+    dialogForm.querySelectorAll('[data-ee-del-colab]').forEach((btn) => {
+      btn.onclick = async () => {
+        const [grupoId, colabId] = btn.dataset.eeDelColab.split(':');
+        try {
+          await api('DELETE', `/escalas-extraordinarias/${atual.id}/turnos/${grupoId}/colaboradores/${colabId}`);
+          await recarregar();
+        } catch (err) {
+          marcarErro(err.message);
+        }
+      };
+    });
+  };
+  render();
+  dialog.showModal();
+}
+
 const BLOCOS_CADASTRO = [
   ['torres', 'Torres', viewTorres],
   ['turnos', 'Turnos', viewTurnos],
   ['mesas', 'Mesas', viewMesas],
   ['contratos', 'Contratos', viewContratos],
   ['sobreaviso', 'Sobreaviso', viewSobreaviso],
+  ['escalas-extraordinarias', 'Escala Extraordinária', viewEscalasExtraordinarias],
 ];
 
 // Cada bloco é uma lista alternada: clicar no título abre/fecha o conteúdo logo abaixo.
@@ -3994,7 +4276,7 @@ function viewCadastros(foco) {
   if (foco) abertos.add(foco);
   main.innerHTML = `
     <div class="page-head">
-      <div><h1>Cadastros</h1><p>Torres, turnos, mesas, contratos e sobreaviso num só lugar. Clique num item para abrir ou fechar.</p></div>
+      <div><h1>Cadastros</h1><p>Torres, turnos, mesas, contratos, sobreaviso e escalas extraordinárias num só lugar. Clique num item para abrir ou fechar.</p></div>
     </div>
     ${BLOCOS_CADASTRO.map(
       ([id, nome]) =>
