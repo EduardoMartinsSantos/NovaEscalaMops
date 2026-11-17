@@ -2351,7 +2351,9 @@ function abrirSeletorMesas(ancora, { selecionados, aoAplicar }) {
         : '<div class="muted filtro-vazio">Nenhuma mesa cadastrada</div>'
     }</div>
     <div class="filtro-acoes"><button class="primary" data-ok>OK</button><button data-cancelar>Cancelar</button></div>`;
-  document.body.append(p);
+  // Dentro de um <dialog> (showModal), o top layer nativo fica sempre acima do body normal — anexar aqui
+  // dentro em vez de document.body, senão o popover fica escondido atrás do próprio diálogo.
+  (ancora.closest('dialog') || document.body).append(p);
   painelFiltro = p;
   p.querySelector('[data-lista]').onchange = (e) => {
     const id = Number(e.target.dataset.i);
