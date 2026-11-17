@@ -170,6 +170,9 @@ function tagTurno(t) {
 }
 const tagSobreaviso = (t) => (t ? tagTorre(t, 'sa') : '');
 const tagMesa = (m) => (m ? tagTorre(m, 'mesa') : '');
+// Mesa agora é multivalor (tags): um colaborador pode ter várias.
+const nomesMesas = (c) => (c.mesa_ids || []).map((id) => porId(state.mesas, id)?.codigo).filter(Boolean);
+const tagsMesas = (c) => (c.mesa_ids || []).map((id) => tagMesa(porId(state.mesas, id))).join(' ') || '<span class="muted">—</span>';
 const tagContrato = (x) => (x ? tagTorre(x, 'contrato') : '');
 
 // Opções de select: itens ativos + o valor atual mesmo que esteja inativo.
@@ -502,13 +505,12 @@ function exportarExcel() {
   const infoColaborador = (c, escala, horario) => {
     const torre = porId(state.torres, c.torre_id);
     const turno = porId(state.turnos, c.turno_id);
-    const mesa = porId(state.mesas, c.mesa_id);
     const contrato = porId(state.contratos, c.contrato_id);
     return so([
       { v: c.nome.toUpperCase(), e: { bold: true, align: 'left' } },
       { v: torre?.codigo || '' },
       { v: turno?.codigo || '' },
-      { v: mesa?.codigo || '' },
+      { v: nomesMesas(c).join(', ') },
       { v: contrato?.codigo || '' },
       { v: horario ?? horarioDoTurno(turno) },
       { v: textoFds(c) },
@@ -683,7 +685,6 @@ const SEMANA_ABREV = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 function nomePlanilha(c, { escala, horario, arrastavel } = {}) {
   const torre = porId(state.torres, c.torre_id);
   const turno = porId(state.turnos, c.turno_id);
-  const mesa = porId(state.mesas, c.mesa_id);
   const contrato = porId(state.contratos, c.contrato_id);
   return `<div class="pl">
     <span class="n" title="${esc(c.nome)}">${
@@ -691,7 +692,7 @@ function nomePlanilha(c, { escala, horario, arrastavel } = {}) {
     }${esc(c.nome)}</span>
     <span data-k="torre">${esc(torre?.codigo || '')}</span>
     <span data-k="turno">${esc(turno?.codigo || '')}</span>
-    <span data-k="mesa">${esc(mesa?.codigo || '')}</span>
+    <span data-k="mesa">${esc(nomesMesas(c).join(', '))}</span>
     <span data-k="contrato">${esc(contrato?.codigo || '')}</span>
     <span data-k="horario">${esc(horario ?? horarioDoTurno(turno))}</span>
     <span data-k="horario_fds" title="Turno de fim de semana">${esc(textoFds(c))}</span>
@@ -1182,11 +1183,22 @@ function decodificar(v, colaboradorId, data) {
   return { tipo: v, turno_id: null };
 }
 
+let avisoFolgaBancoEm = 0;
+
 async function aplicarCelula(colaboradorId, data, v) {
   const { tipo, turno_id } = decodificar(v, colaboradorId, data);
   const lista = state.escala.celulas;
   const i = lista.findIndex((c) => c.colaborador_id === colaboradorId && c.data === data);
   const anterior = i >= 0 ? lista[i] : null;
+  // Folga de banco é fixa: só o painel de Banco de Horas cria/remove (o servidor também recusa).
+  if (anterior && anterior.tipo === 'FOLGA_BANCO') {
+    // Um aviso só por arraste do pincel (não um por célula roxa atravessada).
+    if (Date.now() - avisoFolgaBancoEm > 3000) {
+      avisoFolgaBancoEm = Date.now();
+      toast('Folga de banco é fixa — para mudar esse dia, exclua o agendamento no Banco de Horas.', true);
+    }
+    return;
+  }
   if (anterior && anterior.tipo === tipo && anterior.turno_id === turno_id) return;
   if (!anterior && !tipo) return;
 
@@ -1402,13 +1414,18 @@ async function aplicarPadraoTrabalho(colaboradorId, dataClicada, jaFeitas) {
   const ciclo = state.padraoTrabCiclo.split(',');
   const dias = Math.round((Date.parse(`${fim}T00:00:00Z`) - Date.parse(`${ini}T00:00:00Z`)) / 86400000) + 1;
   if (dias < 1 || dias > 370) return;
+  const lista = state.escala.celulas;
+  // Dias de folga de banco ficam como estão (fixos) — o padrão pula esses dias; o servidor também.
+  const folgasBanco = new Set(
+    lista.filter((x) => x.colaborador_id === c.id && x.tipo === 'FOLGA_BANCO').map((x) => x.data)
+  );
   const celulas = Array.from({ length: dias }, (_, i) => {
     const data = somarDias(ini, i);
     const trabalho = (serie ? ciclo[i % ciclo.length] : ciclo[(diaSemana(data) + 6) % 7]) === 'T';
     return { colaborador_id: c.id, data, tipo: trabalho ? 'TURNO' : 'FOLGA', turno_id: trabalho ? c.turno_id : null };
-  });
+  }).filter((cel) => !folgasBanco.has(cel.data));
+  if (!celulas.length) return;
   // Atualização otimista: pinta na hora, igual aos outros pincéis; o PUT roda em segundo plano.
-  const lista = state.escala.celulas;
   for (const cel of celulas) {
     const i = lista.findIndex((x) => x.colaborador_id === cel.colaborador_id && x.data === cel.data);
     if (i >= 0) lista.splice(i, 1);
@@ -2149,7 +2166,8 @@ const COLUNAS_ESCALA = {
   nome: { rotulo: 'Nome', valor: (c) => c.nome },
   torre: { rotulo: 'Torre', valor: (c) => codigoDe(state.torres, c.torre_id) },
   turno: { rotulo: 'Turno', valor: (c) => codigoDe(state.turnos, c.turno_id) },
-  mesa: { rotulo: 'Mesa', valor: (c) => codigoDe(state.mesas, c.mesa_id) },
+  // Multivalor: filtra por combinação exata de mesas (não por mesa individual).
+  mesa: { rotulo: 'Mesa', valor: (c) => nomesMesas(c).join(', ') },
   contrato: { rotulo: 'Contrato', valor: (c) => codigoDe(state.contratos, c.contrato_id) },
   horario: { rotulo: 'Horário', valor: (c) => horarioDoTurno(porId(state.turnos, c.turno_id)) },
   horario_fds: { rotulo: 'Horário FDS', valor: (c) => textoFds(c) },
@@ -2313,6 +2331,47 @@ function abrirFiltro(ancora, { titulo, valores, selecionados, ordem = 0, aoOrden
   busca.focus();
 }
 
+// Popover para escolher várias Mesas (tags) de um colaborador — mesmo componente visual do filtro de
+// coluna acima, mas as opções são as Mesas cadastradas e o resultado vai para quem chamou, não para um filtro.
+function abrirSeletorMesas(ancora, { selecionados, aoAplicar }) {
+  fecharFiltro();
+  const marcados = new Set(selecionados || []);
+  const p = document.createElement('div');
+  p.className = 'filtro-painel';
+  p.innerHTML = `
+    <div class="filtro-lista" data-lista>${
+      state.mesas.length
+        ? state.mesas
+            .map(
+              (m) =>
+                `<label class="filtro-item"><input type="checkbox" data-i="${m.id}" ${marcados.has(m.id) ? 'checked' : ''}>
+                  <span>${esc(m.codigo)}</span></label>`
+            )
+            .join('')
+        : '<div class="muted filtro-vazio">Nenhuma mesa cadastrada</div>'
+    }</div>
+    <div class="filtro-acoes"><button class="primary" data-ok>OK</button><button data-cancelar>Cancelar</button></div>`;
+  document.body.append(p);
+  painelFiltro = p;
+  p.querySelector('[data-lista]').onchange = (e) => {
+    const id = Number(e.target.dataset.i);
+    if (e.target.checked) marcados.add(id);
+    else marcados.delete(id);
+  };
+  p.onclick = (e) => {
+    if (e.target.closest('[data-cancelar]')) return fecharFiltro();
+    if (e.target.closest('[data-ok]')) {
+      fecharFiltro();
+      aoAplicar([...marcados]);
+    }
+  };
+  const r = ancora.getBoundingClientRect();
+  const largura = p.offsetWidth || 220;
+  const altura = p.offsetHeight || 240;
+  p.style.left = `${Math.max(8, Math.min(r.left, innerWidth - largura - 8))}px`;
+  p.style.top = `${r.bottom + altura + 8 > innerHeight ? Math.max(8, r.top - altura - 4) : r.bottom + 4}px`;
+}
+
 // ----- Tabela de colaboradores: leitura por padrão; "Editar" libera a tabela inteira -----
 // No modo edição as mudanças ficam em state.rascunho (id → campos alterados) até "Salvar alterações".
 
@@ -2321,7 +2380,6 @@ const CAMPOS_SELECT = {
   turno_id: () => state.turnos,
   turno_fds_id: () => state.turnos,
   sobreaviso_torre_id: () => state.torres,
-  mesa_id: () => state.mesas,
   contrato_id: () => state.contratos,
 };
 
@@ -2436,6 +2494,15 @@ function celulaSelect(c, campo, lista, rotulo, vazio, travado = false) {
   } style="--c:${esc(item?.cor || 'transparent')}">${opcoes(lista, atual, rotulo, vazio)}</select></td>`;
 }
 
+// Mesa é multivalor (tags): a célula vira um botão com os chips atuais, que abre o seletor de mesas.
+function celulaMesas(c, travado) {
+  const ids = valorAtual(c, 'mesa_ids') || [];
+  const chips = ids.map((id) => tagMesa(porId(state.mesas, id))).join(' ') || '<span class="muted">—</span>';
+  return `<td class="ed ${alterado(c, 'mesa_ids') ? 'alterado' : ''}"><button type="button" class="ghost" data-mesas="${
+    c.id
+  }" ${travado ? 'disabled' : ''}>${chips}</button></td>`;
+}
+
 function celulaTexto(c, campo, classe, tipo, travado = false) {
   return `<td class="ed ${alterado(c, campo) ? 'alterado' : ''}"><input data-f="${campo}" class="${classe}" type="${tipo}" maxlength="120" value="${esc(
     valorAtual(c, campo)
@@ -2477,7 +2544,7 @@ function linhaColaborador(c, torresSA, travado) {
     ${celulaSelect(c, 'torre_id', torresReais(), (t) => t.codigo, undefined, travado)}
     ${celulaSelect(c, 'turno_id', state.turnos, (t) => `${t.codigo} · ${t.inicio}–${t.fim}`, undefined, travado)}
     ${celulaFds(c, travado)}
-    ${celulaSelect(c, 'mesa_id', state.mesas, (m) => m.codigo, '—', travado)}
+    ${celulaMesas(c, travado)}
     ${celulaSelect(c, 'contrato_id', state.contratos, (x) => x.codigo, '—', travado)}
     ${celulaSelect(c, 'sobreaviso_torre_id', torresSA, (t) => t.codigo, '—', travado)}
     ${celulaTexto(c, 'sobreaviso_mes_inicio', 'w-mes-inicio', 'month', travado)}
@@ -2610,6 +2677,18 @@ function renderColaboradores() {
         },
       });
     }
+    const btnMesas = e.target.closest('[data-mesas]');
+    if (btnMesas) {
+      const c = porId(state.colaboradores, Number(btnMesas.dataset.mesas));
+      return abrirSeletorMesas(btnMesas, {
+        selecionados: valorAtual(c, 'mesa_ids') || [],
+        aoAplicar(ids) {
+          registrarRascunho(c, 'mesa_ids', ids);
+          renderAcoesTabela();
+          renderColaboradores();
+        },
+      });
+    }
     const chk = e.target.closest('[data-sel]');
     if (chk) {
       const id = Number(chk.dataset.sel);
@@ -2689,6 +2768,7 @@ function renderBarraLote() {
 function formLote() {
   const ids = [...state.selecionados];
   const nomes = ids.map((id) => porId(state.colaboradores, id)?.nome).filter(Boolean);
+  let mesaIdsLote; // undefined = manter como está; array = substituir pelo conjunto (vazio inclusive)
   const manter = '<option value="__manter" selected>— manter como está —</option>';
   const sel = (nome, lista, rotulo, vazio) =>
     `<select name="${nome}">${manter}${vazio ? `<option value="">${esc(vazio)}</option>` : ''}${lista
@@ -2711,7 +2791,10 @@ function formLote() {
         )}</select></label>
       </div>
       <div class="row">
-        <label class="field"><span>Mesa</span>${sel('mesa_id', state.mesas, (m) => `${m.codigo} — ${m.nome}`, 'Sem mesa')}</label>
+        <label class="field"><span>Mesas</span>
+          <div class="tags-campo"><span data-chips-mesas-lote class="muted">— manter como está —</span>
+            <button type="button" class="ghost" data-abrir-mesas-lote>Substituir…</button></div>
+        </label>
         <label class="field"><span>Contrato</span>${sel('contrato_id', state.contratos, (x) => `${x.codigo} — ${x.nome}`, 'Sem contrato')}</label>
       </div>
       <div class="row">
@@ -2728,9 +2811,10 @@ function formLote() {
       </div>`,
     async onSubmit(form) {
       const campos = {};
-      for (const k of ['torre_id', 'turno_id', 'turno_fds_id', 'mesa_id', 'contrato_id', 'sobreaviso_torre_id']) {
+      for (const k of ['torre_id', 'turno_id', 'turno_fds_id', 'contrato_id', 'sobreaviso_torre_id']) {
         if (valor(form, k) !== '__manter') campos[k] = valor(form, k);
       }
+      if (mesaIdsLote !== undefined) campos.mesa_ids = mesaIdsLote;
       if (valor(form, 'ativo') !== '__manter') campos.ativo = valor(form, 'ativo') === '1';
       if (valor(form, 'na_escala') !== '__manter') campos.na_escala = valor(form, 'na_escala') === '1';
       if (!Object.keys(campos).length) throw new Error('Altere ao menos um campo.');
@@ -2749,11 +2833,25 @@ function formLote() {
       renderColaboradores();
       toast(`${r.alterados} colaborador(es) atualizado(s).`);
     },
+    aoAbrir(form) {
+      form.querySelector('[data-abrir-mesas-lote]').onclick = (e) => {
+        abrirSeletorMesas(e.currentTarget, {
+          selecionados: mesaIdsLote || [],
+          aoAplicar(idsEscolhidos) {
+            mesaIdsLote = idsEscolhidos;
+            const alvo = form.querySelector('[data-chips-mesas-lote]');
+            alvo.className = '';
+            alvo.innerHTML = idsEscolhidos.length ? tagsMesas({ mesa_ids: idsEscolhidos }) : '<span class="muted">Nenhuma mesa</span>';
+          },
+        });
+      };
+    },
   });
 }
 
 function formColaborador(c = null) {
   const torresSA = state.torres.filter((t) => t.permite_sobreaviso);
+  let mesaIds = c?.mesa_ids || [];
   abrirDialog({
     titulo: c ? 'Editar colaborador' : 'Novo colaborador',
     corpo: `
@@ -2793,12 +2891,10 @@ function formColaborador(c = null) {
         )}</select></label>
       </div>
       <div class="row">
-        <label class="field"><span>Mesa</span><select name="mesa_id">${opcoes(
-          state.mesas,
-          c?.mesa_id,
-          (m) => `${m.codigo} — ${m.nome}`,
-          'Sem mesa'
-        )}</select></label>
+        <label class="field"><span>Mesas</span>
+          <div class="tags-campo"><span data-chips-mesas>${tagsMesas({ mesa_ids: mesaIds })}</span>
+            <button type="button" class="ghost" data-abrir-mesas>Escolher…</button></div>
+        </label>
         <label class="field"><span>Contrato</span><select name="contrato_id">${opcoes(
           state.contratos,
           c?.contrato_id,
@@ -2836,7 +2932,7 @@ function formColaborador(c = null) {
         turno_id: valor(form, 'turno_id'),
         turno_fds_id: valor(form, 'turno_fds_id'),
         sobreaviso_torre_id: valor(form, 'sobreaviso_torre_id'),
-        mesa_id: valor(form, 'mesa_id'),
+        mesa_ids: mesaIds,
         contrato_id: valor(form, 'contrato_id'),
         ativo: marcado(form, 'ativo'),
         na_escala: marcado(form, 'na_escala'),
@@ -2845,6 +2941,17 @@ function formColaborador(c = null) {
       await carregarBase();
       renderColaboradores();
       toast(c ? 'Colaborador atualizado.' : 'Colaborador cadastrado.');
+    },
+    aoAbrir(form) {
+      form.querySelector('[data-abrir-mesas]').onclick = (e) => {
+        abrirSeletorMesas(e.currentTarget, {
+          selecionados: mesaIds,
+          aoAplicar(ids) {
+            mesaIds = ids;
+            form.querySelector('[data-chips-mesas]').innerHTML = tagsMesas({ mesa_ids: mesaIds });
+          },
+        });
+      };
     },
   });
 }
@@ -3660,8 +3767,9 @@ function viewTurnos(alvo) {
 // ---------- início ----------
 
 // Cadastros simples (código, nome, cor, ordem, ativo) usados como tag do colaborador: Mesas e Contratos.
-function telaCadastroSimples({ titulo, subtitulo, recurso, campo, novo, feminino, cor, tag }, alvo) {
-  const contar = (x) => state.colaboradores.filter((c) => c[campo] === x.id).length;
+function telaCadastroSimples({ titulo, subtitulo, recurso, campo, novo, feminino, cor, tag, contar: contarCustom }, alvo) {
+  // mesas passa `contar` porque agora é multivalor (mesa_ids), não uma coluna escalar do colaborador.
+  const contar = contarCustom || ((x) => state.colaboradores.filter((c) => c[campo] === x.id).length);
   const ativo = feminino ? ['Ativa', 'Inativa'] : ['Ativo', 'Inativo'];
   telaCadastro({
     titulo,
@@ -3689,9 +3797,10 @@ function telaCadastroSimples({ titulo, subtitulo, recurso, campo, novo, feminino
 function viewMesas(alvo) {
   telaCadastroSimples({
     titulo: 'Mesas',
-    subtitulo: 'Mesas de trabalho. Cada colaborador pode ter uma mesa, exibida como tag.',
+    subtitulo: 'Mesas de trabalho. Cada colaborador pode ter várias mesas, exibidas como tags.',
     recurso: 'mesas',
     campo: 'mesa_id',
+    contar: (x) => state.colaboradores.filter((c) => c.mesa_ids?.includes(x.id)).length,
     novo: 'Nova mesa',
     feminino: true,
     cor: '#0f766e',
