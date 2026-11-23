@@ -972,36 +972,50 @@ function diasExtra(e) {
 function cartaoEscalaExtra(e, editavel) {
   const dias = diasExtra(e);
   const cel = new Map(e.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
-  const linhas = e.colaborador_ids.length
-    ? e.colaborador_ids
-        .map((id) => {
-          const c = porId(state.colaboradores, id);
-          const celulas = dias
-            .map((d) => {
-              const x = cel.get(`${id}|${d}`);
-              const turno = x ? porId(state.turnos, x.turno_id) : null;
-              const we = [0, 6].includes(diaSemana(d)) ? 'we' : '';
-              return editavel
-                ? `<td class="${we} ee-cel" data-ee-cel="${e.id}:${id}:${d}">${turno ? tagTurno(turno) : ''}</td>`
-                : `<td class="${we}">${turno ? tagTurno(turno) : ''}</td>`;
-            })
-            .join('');
-          const remover = editavel
-            ? ` <button type="button" class="chip-remover" data-ee-del-colab="${e.id}:${id}" title="Remover">✕</button>`
+  const celulasDe = (id) =>
+    dias
+      .map((d) => {
+        const x = cel.get(`${id}|${d}`);
+        const turno = x ? porId(state.turnos, x.turno_id) : null;
+        const we = [0, 6].includes(diaSemana(d)) ? 'we' : '';
+        return editavel
+          ? `<td class="${we} ee-cel" data-ee-cel="${e.id}:${id}:${d}">${turno ? tagTurno(turno) : ''}</td>`
+          : `<td class="${we}">${turno ? tagTurno(turno) : ''}</td>`;
+      })
+      .join('');
+  const grupos = e.turnos.length
+    ? e.turnos
+        .map((g) => {
+          const turno = porId(state.turnos, g.turno_id);
+          const acoesGrupo = editavel
+            ? ` <button type="button" class="ghost" data-ee-add-colab="${e.id}:${g.id}">+ Adicionar colaborador</button>
+                <button type="button" class="ghost danger icon" data-ee-del-turno="${e.id}:${g.id}" title="Remover turno">✕</button>`
             : '';
-          return `<tr><td class="name">${esc(c?.nome || '—')}${remover}</td>${celulas}</tr>`;
+          const cabecalho = `<tr class="group"><td class="name">${tagTurno(turno)} <span class="muted">(${g.colaborador_ids.length})</span>${acoesGrupo}</td><td colspan="${dias.length}"></td></tr>`;
+          const linhas = g.colaborador_ids.length
+            ? g.colaborador_ids
+                .map((id) => {
+                  const c = porId(state.colaboradores, id);
+                  const remover = editavel
+                    ? ` <button type="button" class="chip-remover" data-ee-del-colab="${e.id}:${g.id}:${id}" title="Remover">✕</button>`
+                    : '';
+                  return `<tr><td class="name">${esc(c?.nome || '—')}${remover}</td>${celulasDe(id)}</tr>`;
+                })
+                .join('')
+            : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
+          return cabecalho + linhas;
         })
         .join('')
-    : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
+    : `<tr><td class="name muted">Nenhum turno adicionado ainda.</td><td colspan="${dias.length}"></td></tr>`;
   const cabDias = dias
     .map((d) => `<th class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
   return `<div class="card extra-card">
     <div class="extra-card-head">
       <strong>${esc(e.nome || 'Escala extraordinária')}</strong><span class="muted">${esc(periodoExtraFmt(e))}</span>
-      ${editavel ? `<button class="ghost" data-ee-add-colab="${e.id}">+ Adicionar colaborador</button>` : ''}
+      ${editavel ? `<button class="ghost" data-ee-add-turno="${e.id}">+ Adicionar turno</button>` : ''}
     </div>
-    <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${linhas}</tbody></table></div>
+    <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${grupos}</tbody></table></div>
   </div>`;
 }
 
@@ -1021,20 +1035,48 @@ function renderGradeExtra(wrap) {
   const recarregar = () => carregarEscalaExtraDoMes().then(() => renderGradeExtra(wrap));
   wrap.onclick = (e) => {
     if (e.target.closest('[data-ee-criar]')) return dialogNovaEscalaExtra();
+    const addTurnoBtn = e.target.closest('[data-ee-add-turno]');
+    if (addTurnoBtn) {
+      const eeId = Number(addTurnoBtn.dataset.eeAddTurno);
+      const ee = state.escalasExtraDoMes.find((x) => x.id === eeId);
+      const disponiveis = state.turnos.filter((t) => t.ativo && !ee.turnos.some((g) => g.turno_id === t.id));
+      return abrirSeletorUnico(addTurnoBtn, {
+        itens: disponiveis,
+        rotulo: (t) => `${t.codigo} — ${t.nome}`,
+        vazio: 'Todos os turnos já foram adicionados',
+        async aoEscolher(t) {
+          try {
+            await api('POST', `/escalas-extraordinarias/${eeId}/turnos`, { turno_id: t.id });
+            await recarregar();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        },
+      });
+    }
+    const delTurnoBtn = e.target.closest('[data-ee-del-turno]');
+    if (delTurnoBtn) {
+      const [eeId, turnoGrupoId] = delTurnoBtn.dataset.eeDelTurno.split(':');
+      if (!confirm('Remover este turno e todo mundo dentro dele desta escala extraordinária?')) return;
+      api('DELETE', `/escalas-extraordinarias/${eeId}/turnos/${turnoGrupoId}`)
+        .then(recarregar)
+        .catch((err) => toast(err.message, true));
+      return;
+    }
     const addBtn = e.target.closest('[data-ee-add-colab]');
     if (addBtn) {
-      const eeId = Number(addBtn.dataset.eeAddColab);
-      const ee = state.escalasExtraDoMes.find((x) => x.id === eeId);
-      const disponiveis = state.colaboradores
-        .filter((c) => !ee.colaborador_ids.includes(c.id))
-        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      const [eeId, turnoGrupoId] = addBtn.dataset.eeAddColab.split(':');
+      const ee = state.escalasExtraDoMes.find((x) => x.id === Number(eeId));
+      const usados = new Set(ee.turnos.flatMap((g) => g.colaborador_ids));
+      const disponiveis = state.colaboradores.filter((c) => !usados.has(c.id)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
       return abrirSeletorUnico(addBtn, {
         itens: disponiveis,
         rotulo: (c) => c.nome,
-        vazio: 'Nenhum colaborador disponível (todos já foram adicionados)',
+        busca: true,
+        vazio: 'Nenhum colaborador disponível (todos já estão em algum turno desta escala extraordinária)',
         async aoEscolher(c) {
           try {
-            await api('POST', `/escalas-extraordinarias/${eeId}/colaboradores`, { colaborador_id: c.id });
+            await api('POST', `/escalas-extraordinarias/${eeId}/turnos/${turnoGrupoId}/colaboradores`, { colaborador_id: c.id });
             await recarregar();
           } catch (err) {
             toast(err.message, true);
@@ -1044,9 +1086,9 @@ function renderGradeExtra(wrap) {
     }
     const delBtn = e.target.closest('[data-ee-del-colab]');
     if (delBtn) {
-      const [eeId, colabId] = delBtn.dataset.eeDelColab.split(':');
+      const [eeId, turnoGrupoId, colabId] = delBtn.dataset.eeDelColab.split(':');
       if (!confirm('Remover este colaborador? As células dele nesta escala extraordinária somem junto.')) return;
-      api('DELETE', `/escalas-extraordinarias/${eeId}/colaboradores/${colabId}`)
+      api('DELETE', `/escalas-extraordinarias/${eeId}/turnos/${turnoGrupoId}/colaboradores/${colabId}`)
         .then(recarregar)
         .catch((err) => toast(err.message, true));
       return;
@@ -2524,18 +2566,26 @@ function abrirSeletorMesas(ancora, { selecionados, aoAplicar }) {
 
 // Popover de escolha única: clicar num item já aplica, sem OK/Cancelar. Mesmo shell visual/posicionamento
 // do filtro/seletor de mesas acima; usado pela Escala Extraordinária (escolher turno, escolher colaborador).
-function abrirSeletorUnico(ancora, { itens, rotulo, vazio, aoEscolher }) {
+// Popover de escolha única com busca por texto quando há itens suficientes pra valer a pena.
+function abrirSeletorUnico(ancora, { itens, rotulo, vazio, aoEscolher, busca: comBusca = itens.length > 6 }) {
   fecharFiltro();
   const p = document.createElement('div');
   p.className = 'filtro-painel';
+  const desenharLista = (termo) => {
+    const t = termo.trim().toLowerCase();
+    const visiveis = t ? itens.filter((it) => rotulo(it).toLowerCase().includes(t)) : itens;
+    return visiveis.length
+      ? visiveis.map((it) => `<button type="button" class="ghost" data-i="${itens.indexOf(it)}">${esc(rotulo(it))}</button>`).join('')
+      : `<div class="muted filtro-vazio">${esc(vazio || 'Nenhum resultado')}</div>`;
+  };
   p.innerHTML = `
-    <div class="filtro-lista" data-lista>${
-      itens.length
-        ? itens.map((it, i) => `<button type="button" class="ghost" data-i="${i}">${esc(rotulo(it))}</button>`).join('')
-        : `<div class="muted filtro-vazio">${esc(vazio || 'Nada disponível')}</div>`
-    }</div>`;
+    ${comBusca ? '<input type="search" placeholder="Pesquisar" data-busca>' : ''}
+    <div class="filtro-lista" data-lista>${itens.length ? desenharLista('') : `<div class="muted filtro-vazio">${esc(vazio || 'Nada disponível')}</div>`}</div>`;
   (ancora.closest('dialog') || document.body).append(p);
   painelFiltro = p;
+  const lista = p.querySelector('[data-lista]');
+  const campoBusca = p.querySelector('[data-busca]');
+  if (campoBusca) campoBusca.oninput = () => (lista.innerHTML = desenharLista(campoBusca.value));
   p.onclick = (e) => {
     const b = e.target.closest('[data-i]');
     if (!b) return;
@@ -2548,6 +2598,7 @@ function abrirSeletorUnico(ancora, { itens, rotulo, vazio, aoEscolher }) {
   const altura = p.offsetHeight || 240;
   p.style.left = `${Math.max(8, Math.min(r.left, innerWidth - largura - 8))}px`;
   p.style.top = `${r.bottom + altura + 8 > innerHeight ? Math.max(8, r.top - altura - 4) : r.bottom + 4}px`;
+  if (campoBusca) campoBusca.focus();
 }
 
 // ----- Tabela de colaboradores: leitura por padrão; "Editar" libera a tabela inteira -----
@@ -4197,13 +4248,14 @@ function viewEscalasExtraordinarias(alvo = main) {
     </div>
     <div class="card list-wrap" data-lista>${
       lista.length
-        ? `<table class="list"><thead><tr><th>Nome</th><th>Período</th><th>Pessoas</th><th></th></tr></thead>
+        ? `<table class="list"><thead><tr><th>Nome</th><th>Período</th><th>Turnos</th><th>Pessoas</th><th></th></tr></thead>
           <tbody>${lista
             .map(
               (e) => `<tr>
                 <td>${esc(e.nome || '—')}</td>
                 <td class="nowrap">${esc(periodoExtraFmt(e))}</td>
-                <td>${e.colaborador_ids.length}</td>
+                <td>${e.turnos.length}</td>
+                <td>${e.turnos.reduce((n, g) => n + g.colaborador_ids.length, 0)}</td>
                 <td class="actions">
                   <button class="ghost" data-ee-editar="${e.id}">Abrir na Escala</button>
                   <button class="ghost danger icon" data-ee-excluir="${e.id}" title="Excluir">✕</button>

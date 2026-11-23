@@ -212,6 +212,9 @@ table.grid.planilha td.p-folga-banco { background: var(--roxo-banco); color: #4c
 .extra-grade-wrap { overflow: auto; max-width: 100%; }
 table.extra-grade th, table.extra-grade td { height: 24px; min-width: 52px; font-size: 11px; text-align: center; padding: 2px 6px; }
 table.extra-grade .name { text-align: left; white-space: nowrap; }
+/* Cabeçalho dos dias com a mesma cor/estilo da Escala normal (table.grid.planilha thead th). */
+table.extra-grade thead th { background: #1f3b64; color: #fff; }
+table.extra-grade thead th small { color: #c9d6ea; }
 table.extra-grade td.ee-cel { cursor: pointer; }
 table.extra-grade td.ee-cel:hover { outline: 2px solid var(--primary); outline-offset: -2px; }
 .chip-remover { border: 0; background: transparent; color: inherit; padding: 0; margin-left: 2px; cursor: pointer; font-size: 11px; line-height: 1; }
