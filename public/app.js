@@ -967,8 +967,46 @@ function diasExtra(e) {
   return dias;
 }
 
+// Uma escala extraordinária, como cartão com grade dia-a-dia. Admin edita direto aqui (sem diálogo):
+// botão "+ Adicionar colaborador" e clique em qualquer célula escolhem turno/pessoa na hora.
+function cartaoEscalaExtra(e, editavel) {
+  const dias = diasExtra(e);
+  const cel = new Map(e.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
+  const linhas = e.colaborador_ids.length
+    ? e.colaborador_ids
+        .map((id) => {
+          const c = porId(state.colaboradores, id);
+          const celulas = dias
+            .map((d) => {
+              const x = cel.get(`${id}|${d}`);
+              const turno = x ? porId(state.turnos, x.turno_id) : null;
+              const we = [0, 6].includes(diaSemana(d)) ? 'we' : '';
+              return editavel
+                ? `<td class="${we} ee-cel" data-ee-cel="${e.id}:${id}:${d}">${turno ? tagTurno(turno) : ''}</td>`
+                : `<td class="${we}">${turno ? tagTurno(turno) : ''}</td>`;
+            })
+            .join('');
+          const remover = editavel
+            ? ` <button type="button" class="chip-remover" data-ee-del-colab="${e.id}:${id}" title="Remover">✕</button>`
+            : '';
+          return `<tr><td class="name">${esc(c?.nome || '—')}${remover}</td>${celulas}</tr>`;
+        })
+        .join('')
+    : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
+  const cabDias = dias
+    .map((d) => `<th class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
+    .join('');
+  return `<div class="card extra-card">
+    <div class="extra-card-head">
+      <strong>${esc(e.nome || 'Escala extraordinária')}</strong><span class="muted">${esc(periodoExtraFmt(e))}</span>
+      ${editavel ? `<button class="ghost" data-ee-add-colab="${e.id}">+ Adicionar colaborador</button>` : ''}
+    </div>
+    <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${linhas}</tbody></table></div>
+  </div>`;
+}
+
 // Grade dia-a-dia (mesmo padrão visual da Escala normal: dias em coluna, colaboradores em linha) das
-// escalas extraordinárias do mês — só leitura aqui; editar é em Cadastros → Escala Extraordinária.
+// escalas extraordinárias do mês. Admin edita direto na tela; quem não é admin só vê.
 function renderGradeExtra(wrap) {
   const lista = state.escalasExtraDoMes || [];
   const admin = !!state.usuario?.admin;
@@ -977,45 +1015,58 @@ function renderGradeExtra(wrap) {
       admin ? ' <button class="ghost" data-ee-criar>+ Criar escala extraordinária</button>' : ' Peça a um admin pra criar uma.'
     }</div>`;
   } else {
-    wrap.innerHTML = lista
-      .map((e) => {
-        const dias = diasExtra(e);
-        const cel = new Map(e.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
-        const linhas = e.colaborador_ids.length
-          ? e.colaborador_ids
-              .map((id) => {
-                const c = porId(state.colaboradores, id);
-                const celulas = dias
-                  .map((d) => {
-                    const x = cel.get(`${id}|${d}`);
-                    const turno = x ? porId(state.turnos, x.turno_id) : null;
-                    return `<td class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${turno ? tagTurno(turno) : ''}</td>`;
-                  })
-                  .join('');
-                return `<tr><td class="name">${esc(c?.nome || '—')}</td>${celulas}</tr>`;
-              })
-              .join('')
-          : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
-        const cabDias = dias
-          .map((d) => `<th class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
-          .join('');
-        return `<div class="card extra-card">
-          <div class="extra-card-head">
-            <strong>${esc(e.nome || 'Escala extraordinária')}</strong><span class="muted">${esc(periodoExtraFmt(e))}</span>
-            ${admin ? `<button class="ghost" data-ee-editar-grid="${e.id}">Adicionar turno e colaboradores</button>` : ''}
-          </div>
-          <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${linhas}</tbody></table></div>
-        </div>`;
-      })
-      .join('');
+    wrap.innerHTML = lista.map((e) => cartaoEscalaExtra(e, admin)).join('');
   }
   if (!admin) return;
+  const recarregar = () => carregarEscalaExtraDoMes().then(() => renderGradeExtra(wrap));
   wrap.onclick = (e) => {
     if (e.target.closest('[data-ee-criar]')) return dialogNovaEscalaExtra();
-    const btn = e.target.closest('[data-ee-editar-grid]');
-    if (btn) {
-      const ee = state.escalasExtraDoMes.find((x) => x.id === Number(btn.dataset.eeEditarGrid));
-      if (ee) dialogEscalaExtra(ee);
+    const addBtn = e.target.closest('[data-ee-add-colab]');
+    if (addBtn) {
+      const eeId = Number(addBtn.dataset.eeAddColab);
+      const ee = state.escalasExtraDoMes.find((x) => x.id === eeId);
+      const disponiveis = state.colaboradores
+        .filter((c) => !ee.colaborador_ids.includes(c.id))
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      return abrirSeletorUnico(addBtn, {
+        itens: disponiveis,
+        rotulo: (c) => c.nome,
+        vazio: 'Nenhum colaborador disponível (todos já foram adicionados)',
+        async aoEscolher(c) {
+          try {
+            await api('POST', `/escalas-extraordinarias/${eeId}/colaboradores`, { colaborador_id: c.id });
+            await recarregar();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        },
+      });
+    }
+    const delBtn = e.target.closest('[data-ee-del-colab]');
+    if (delBtn) {
+      const [eeId, colabId] = delBtn.dataset.eeDelColab.split(':');
+      if (!confirm('Remover este colaborador? As células dele nesta escala extraordinária somem junto.')) return;
+      api('DELETE', `/escalas-extraordinarias/${eeId}/colaboradores/${colabId}`)
+        .then(recarregar)
+        .catch((err) => toast(err.message, true));
+      return;
+    }
+    const td = e.target.closest('[data-ee-cel]');
+    if (td) {
+      const [eeId, colabId, data] = td.dataset.eeCel.split(':');
+      const itens = [{ id: null, codigo: '', nome: 'Vazio / folga' }, ...state.turnos.filter((t) => t.ativo)];
+      abrirSeletorUnico(td, {
+        itens,
+        rotulo: (t) => (t.id === null ? t.nome : `${t.codigo} — ${t.nome}`),
+        async aoEscolher(t) {
+          try {
+            await api('PUT', `/escalas-extraordinarias/${eeId}/celula`, { colaborador_id: Number(colabId), data, turno_id: t.id });
+            await recarregar();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        },
+      });
     }
   };
 }
@@ -4154,7 +4205,7 @@ function viewEscalasExtraordinarias(alvo = main) {
                 <td class="nowrap">${esc(periodoExtraFmt(e))}</td>
                 <td>${e.colaborador_ids.length}</td>
                 <td class="actions">
-                  <button class="ghost" data-ee-editar="${e.id}">Editar</button>
+                  <button class="ghost" data-ee-editar="${e.id}">Abrir na Escala</button>
                   <button class="ghost danger icon" data-ee-excluir="${e.id}" title="Excluir">✕</button>
                 </td>
               </tr>`
@@ -4165,7 +4216,11 @@ function viewEscalasExtraordinarias(alvo = main) {
   $('[data-nova-ee]', alvo).onclick = () => dialogNovaEscalaExtra();
   alvo.querySelector('[data-lista]').onclick = (e) => {
     const ed = e.target.closest('[data-ee-editar]');
-    if (ed) return dialogEscalaExtra(state.escalasExtra.find((x) => x.id === Number(ed.dataset.eeEditar)));
+    if (ed) {
+      const ee = state.escalasExtra.find((x) => x.id === Number(ed.dataset.eeEditar));
+      if (ee) irParaEscalaExtra(ee.data_inicio.slice(0, 7));
+      return;
+    }
     const del = e.target.closest('[data-ee-excluir]');
     if (del) {
       if (!confirm('Excluir esta escala extraordinária e tudo dentro dela?')) return;
@@ -4176,6 +4231,15 @@ function viewEscalasExtraordinarias(alvo = main) {
         .catch((err) => toast(err.message, true));
     }
   };
+}
+
+// Leva pra Escala de Equipe, aba "Extraordinária", no mês informado — é lá que se edita agora (sem diálogo).
+function irParaEscalaExtra(mes) {
+  state.mes = mes;
+  state.agrupar = 'extra';
+  salvarPreferencia('agrupar', 'extra');
+  if (location.hash === '#escala') rota();
+  else location.hash = '#escala';
 }
 
 function dialogNovaEscalaExtra() {
@@ -4193,121 +4257,13 @@ function dialogNovaEscalaExtra() {
         data_inicio: valor(form, 'data_inicio'),
         data_fim: valor(form, 'data_fim'),
       });
-      await refrescarEscalaExtraUI();
+      // Já na Escala, na aba Extraordinária: só atualiza ali mesmo. Senão (ex.: veio de Cadastros), vai pra
+      // lá — é lá que se adiciona colaborador e turno agora, direto na tela, sem diálogo.
+      if (state.agrupar === 'extra' && $('#grid')) await refrescarEscalaExtraUI();
+      else irParaEscalaExtra(ee.data_inicio.slice(0, 7));
       toast('Escala extraordinária criada.');
-      // Recém-criada: ainda não tem ninguém. O dialog é compartilhado — só abre o construtor
-      // depois que este aqui realmente fechar.
-      dialog.addEventListener('close', () => dialogEscalaExtra({ ...ee, colaborador_ids: [], celulas: [] }), { once: true });
     },
   });
-}
-
-// Construtor ("tela lisa"): dialog grande com render() próprio, mesmo padrão de dialogBancoHoras/dialogFeriasPj.
-function dialogEscalaExtra(ee) {
-  dialog.classList.add('larga');
-  dialog.addEventListener('close', () => dialog.classList.remove('larga'), { once: true });
-  dialog.addEventListener('close', () => refrescarEscalaExtraUI(), { once: true });
-  dialogForm.onsubmit = (e) => e.preventDefault();
-  let atual = ee;
-  const render = () => {
-    const dias = diasExtra(atual);
-    const cel = new Map(atual.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
-    const linhas = atual.colaborador_ids.length
-      ? atual.colaborador_ids
-          .map((id) => {
-            const c = porId(state.colaboradores, id);
-            const celulas = dias
-              .map((d) => {
-                const x = cel.get(`${id}|${d}`);
-                const turno = x ? porId(state.turnos, x.turno_id) : null;
-                return `<td class="ee-cel ${[0, 6].includes(diaSemana(d)) ? 'we' : ''}" data-ee-cel="${id}:${d}">${
-                  turno ? tagTurno(turno) : ''
-                }</td>`;
-              })
-              .join('');
-            return `<tr><td class="name">${esc(c?.nome || '—')} <button type="button" class="chip-remover" data-ee-del-colab="${id}" title="Remover">✕</button></td>${celulas}</tr>`;
-          })
-          .join('')
-      : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
-    const cabDias = dias
-      .map(
-        (d) =>
-          `<th class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`
-      )
-      .join('');
-    dialogForm.innerHTML = `
-      <header class="bh-head">
-        <h2>${esc(atual.nome || 'Escala extraordinária')}</h2>
-        <p class="muted">${esc(periodoExtraFmt(atual))}</p>
-      </header>
-      <div class="body">
-        <div class="bh-acao-botoes"><button type="button" class="primary" data-ee-add-colab>+ Adicionar colaborador</button></div>
-        <p class="form-error" data-ee-erro></p>
-        <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${linhas}</tbody></table></div>
-        <p class="hint">Clique numa célula pra escolher o turno daquele dia (ou deixar vazio/folga). Nenhuma regra de torre/turno normal se aplica aqui.</p>
-      </div>
-      <footer><button type="button" data-cancel>Fechar</button></footer>`;
-    $('[data-cancel]', dialogForm).onclick = () => dialog.close();
-    const erroEl = dialogForm.querySelector('[data-ee-erro]');
-    const marcarErro = (msg) => (erroEl.textContent = msg);
-    const recarregar = async () => {
-      atual = await api('GET', `/escalas-extraordinarias/${atual.id}`);
-      render();
-    };
-    dialogForm.querySelector('[data-ee-add-colab]').onclick = (e) => {
-      const disponiveis = state.colaboradores
-        .filter((c) => !atual.colaborador_ids.includes(c.id))
-        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-      abrirSeletorUnico(e.currentTarget, {
-        itens: disponiveis,
-        rotulo: (c) => c.nome,
-        vazio: 'Nenhum colaborador disponível (todos já foram adicionados)',
-        async aoEscolher(c) {
-          try {
-            await api('POST', `/escalas-extraordinarias/${atual.id}/colaboradores`, { colaborador_id: c.id });
-            await recarregar();
-          } catch (err) {
-            marcarErro(err.message);
-          }
-        },
-      });
-    };
-    dialogForm.querySelectorAll('[data-ee-del-colab]').forEach((btn) => {
-      btn.onclick = async () => {
-        if (!confirm('Remover este colaborador? As células dele nesta escala extraordinária somem junto.')) return;
-        try {
-          await api('DELETE', `/escalas-extraordinarias/${atual.id}/colaboradores/${btn.dataset.eeDelColab}`);
-          await recarregar();
-        } catch (err) {
-          marcarErro(err.message);
-        }
-      };
-    });
-    dialogForm.querySelectorAll('[data-ee-cel]').forEach((td) => {
-      td.onclick = (e) => {
-        const [colaboradorIdTxt, data] = td.dataset.eeCel.split(':');
-        const itens = [{ id: null, codigo: '', nome: 'Vazio / folga' }, ...state.turnos.filter((t) => t.ativo)];
-        abrirSeletorUnico(e.currentTarget, {
-          itens,
-          rotulo: (t) => (t.id === null ? t.nome : `${t.codigo} — ${t.nome}`),
-          async aoEscolher(t) {
-            try {
-              await api('PUT', `/escalas-extraordinarias/${atual.id}/celula`, {
-                colaborador_id: Number(colaboradorIdTxt),
-                data,
-                turno_id: t.id,
-              });
-              await recarregar();
-            } catch (err) {
-              marcarErro(err.message);
-            }
-          },
-        });
-      };
-    });
-  };
-  render();
-  dialog.showModal();
 }
 
 const BLOCOS_CADASTRO = [
