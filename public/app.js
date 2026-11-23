@@ -971,38 +971,53 @@ function diasExtra(e) {
 // escalas extraordinárias do mês — só leitura aqui; editar é em Cadastros → Escala Extraordinária.
 function renderGradeExtra(wrap) {
   const lista = state.escalasExtraDoMes || [];
+  const admin = !!state.usuario?.admin;
   if (!lista.length) {
-    wrap.innerHTML = '<div class="empty">Nenhuma escala extraordinária neste mês. Crie uma em Cadastros → Escala Extraordinária.</div>';
-    return;
+    wrap.innerHTML = `<div class="empty">Nenhuma escala extraordinária neste mês.${
+      admin ? ' <button class="ghost" data-ee-criar>+ Criar escala extraordinária</button>' : ' Peça a um admin pra criar uma.'
+    }</div>`;
+  } else {
+    wrap.innerHTML = lista
+      .map((e) => {
+        const dias = diasExtra(e);
+        const cel = new Map(e.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
+        const linhas = e.colaborador_ids.length
+          ? e.colaborador_ids
+              .map((id) => {
+                const c = porId(state.colaboradores, id);
+                const celulas = dias
+                  .map((d) => {
+                    const x = cel.get(`${id}|${d}`);
+                    const turno = x ? porId(state.turnos, x.turno_id) : null;
+                    return `<td class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${turno ? tagTurno(turno) : ''}</td>`;
+                  })
+                  .join('');
+                return `<tr><td class="name">${esc(c?.nome || '—')}</td>${celulas}</tr>`;
+              })
+              .join('')
+          : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
+        const cabDias = dias
+          .map((d) => `<th class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
+          .join('');
+        return `<div class="card extra-card">
+          <div class="extra-card-head">
+            <strong>${esc(e.nome || 'Escala extraordinária')}</strong><span class="muted">${esc(periodoExtraFmt(e))}</span>
+            ${admin ? `<button class="ghost" data-ee-editar-grid="${e.id}">Adicionar turno e colaboradores</button>` : ''}
+          </div>
+          <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${linhas}</tbody></table></div>
+        </div>`;
+      })
+      .join('');
   }
-  wrap.innerHTML = lista
-    .map((e) => {
-      const dias = diasExtra(e);
-      const cel = new Map(e.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
-      const linhas = e.colaborador_ids.length
-        ? e.colaborador_ids
-            .map((id) => {
-              const c = porId(state.colaboradores, id);
-              const celulas = dias
-                .map((d) => {
-                  const x = cel.get(`${id}|${d}`);
-                  const turno = x ? porId(state.turnos, x.turno_id) : null;
-                  return `<td class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${turno ? tagTurno(turno) : ''}</td>`;
-                })
-                .join('');
-              return `<tr><td class="name">${esc(c?.nome || '—')}</td>${celulas}</tr>`;
-            })
-            .join('')
-        : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
-      const cabDias = dias
-        .map((d) => `<th class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
-        .join('');
-      return `<div class="card extra-card">
-        <div class="extra-card-head"><strong>${esc(e.nome || 'Escala extraordinária')}</strong><span class="muted">${esc(periodoExtraFmt(e))}</span></div>
-        <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${linhas}</tbody></table></div>
-      </div>`;
-    })
-    .join('');
+  if (!admin) return;
+  wrap.onclick = (e) => {
+    if (e.target.closest('[data-ee-criar]')) return dialogNovaEscalaExtra();
+    const btn = e.target.closest('[data-ee-editar-grid]');
+    if (btn) {
+      const ee = state.escalasExtraDoMes.find((x) => x.id === Number(btn.dataset.eeEditarGrid));
+      if (ee) dialogEscalaExtra(ee);
+    }
+  };
 }
 
 function renderGrade() {
@@ -4100,6 +4115,21 @@ async function carregarEscalasExtra() {
   state.escalasExtra = await Promise.all(lista.map((e) => api('GET', `/escalas-extraordinarias/${e.id}`)));
 }
 
+// Depois de criar/editar/excluir uma escala extraordinária, atualiza onde quer que esteja sendo vista:
+// o bloco em Cadastros (se aberto) e/ou a aba "Extraordinária" da Escala de Equipe (se aberta).
+async function refrescarEscalaExtraUI() {
+  try {
+    await carregarEscalasExtra();
+    if ($('#bloco-escalas-extraordinarias')) atualizarCadastros();
+    if (state.agrupar === 'extra' && $('#grid')) {
+      await carregarEscalaExtraDoMes();
+      renderGrade();
+    }
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
 function viewEscalasExtraordinarias(alvo = main) {
   if (!state.escalasExtra) {
     alvo.innerHTML = '<div class="empty">Carregando…</div>';
@@ -4158,14 +4188,16 @@ function dialogNovaEscalaExtra() {
         <label class="field"><span>Data fim *</span><input name="data_fim" type="date" required></label>
       </div>`,
     async onSubmit(form) {
-      await api('POST', '/escalas-extraordinarias', {
+      const ee = await api('POST', '/escalas-extraordinarias', {
         nome: valor(form, 'nome'),
         data_inicio: valor(form, 'data_inicio'),
         data_fim: valor(form, 'data_fim'),
       });
-      await carregarEscalasExtra();
-      atualizarCadastros();
-      toast('Escala extraordinária criada. Clique em Editar para montar os turnos e as pessoas.');
+      await refrescarEscalaExtraUI();
+      toast('Escala extraordinária criada.');
+      // Recém-criada: ainda não tem ninguém. O dialog é compartilhado — só abre o construtor
+      // depois que este aqui realmente fechar.
+      dialog.addEventListener('close', () => dialogEscalaExtra({ ...ee, colaborador_ids: [], celulas: [] }), { once: true });
     },
   });
 }
@@ -4174,9 +4206,7 @@ function dialogNovaEscalaExtra() {
 function dialogEscalaExtra(ee) {
   dialog.classList.add('larga');
   dialog.addEventListener('close', () => dialog.classList.remove('larga'), { once: true });
-  dialog.addEventListener('close', () => carregarEscalasExtra().then(atualizarCadastros).catch((e) => toast(e.message, true)), {
-    once: true,
-  });
+  dialog.addEventListener('close', () => refrescarEscalaExtraUI(), { once: true });
   dialogForm.onsubmit = (e) => e.preventDefault();
   let atual = ee;
   const render = () => {
