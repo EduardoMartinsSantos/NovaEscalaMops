@@ -124,6 +124,8 @@ const state = {
   escala: null,
   escalaEditando: false, // trava a escala por padrão; "Editar" libera, "Salvar" trava de novo
   pincel: null, // valor aplicado direto ao clicar/arrastar nas células
+  eeEditando: false, // trava exclusão de turno/colaborador na Escala Extraordinária; "Habilitar exclusão" libera
+  eePincel: null, // turno_id ('' = vazio/folga) aplicado direto ao clicar/arrastar nas células da Escala Extraordinária
   bancoHoras: null, // lançamentos do banco de horas (carregado ao abrir a tela)
   bhSaldos: null, // saldos iniciais mensais do banco de horas ({ colaborador_id, mes, saldo_inicial })
   filtroBH: { busca: '' },
@@ -262,6 +264,11 @@ document.addEventListener('keydown', (e) => {
     limparPrevia();
     renderLegenda();
   }
+  if (state.eePincel !== null) {
+    state.eePincel = null;
+    const wrap = $('#grid');
+    if (wrap && state.agrupar === 'extra') renderGradeExtra(wrap);
+  }
 });
 addEventListener('resize', fecharPopover);
 
@@ -304,6 +311,7 @@ function rota() {
   document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === nav));
   fecharPopover();
   state.pincel = null;
+  state.eePincel = null;
   VIEWS[view]();
 }
 addEventListener('hashchange', rota);
@@ -968,8 +976,10 @@ function diasExtra(e) {
 }
 
 // Uma escala extraordinária, como cartão com grade dia-a-dia. Admin edita direto aqui (sem diálogo):
-// botão "+ Adicionar colaborador" e clique em qualquer célula escolhem turno/pessoa na hora.
-function cartaoEscalaExtra(e, editavel) {
+// botão "+ Adicionar colaborador" e clique em qualquer célula escolhem turno/pessoa na hora (ou pelo pincel).
+// "editavel" libera adicionar turno/colaborador e pintar células; "podeExcluir" (edição habilitada) também
+// libera remover turno/colaborador.
+function cartaoEscalaExtra(e, editavel, podeExcluir) {
   const dias = diasExtra(e);
   const cel = new Map(e.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
   const celulasDe = (id) =>
@@ -978,9 +988,11 @@ function cartaoEscalaExtra(e, editavel) {
         const x = cel.get(`${id}|${d}`);
         const turno = x ? porId(state.turnos, x.turno_id) : null;
         const we = [0, 6].includes(diaSemana(d)) ? 'we' : '';
+        // Sem turno = folga/vermelho, igual à Escala normal.
+        const corCel = turno ? 'ee-trab' : 'ee-folga';
         return editavel
-          ? `<td class="${we} ee-cel" data-ee-cel="${e.id}:${id}:${d}">${turno ? tagTurno(turno) : ''}</td>`
-          : `<td class="${we}">${turno ? tagTurno(turno) : ''}</td>`;
+          ? `<td class="${we} ${corCel} ee-cel" data-ee-cel="${e.id}:${id}:${d}">${turno ? tagTurno(turno) : ''}</td>`
+          : `<td class="${we} ${corCel}">${turno ? tagTurno(turno) : ''}</td>`;
       })
       .join('');
   const grupos = e.turnos.length
@@ -989,14 +1001,14 @@ function cartaoEscalaExtra(e, editavel) {
           const turno = porId(state.turnos, g.turno_id);
           const acoesGrupo = editavel
             ? ` <button type="button" class="ghost" data-ee-add-colab="${e.id}:${g.id}">+ Adicionar colaborador</button>
-                <button type="button" class="ghost danger icon" data-ee-del-turno="${e.id}:${g.id}" title="Remover turno">✕</button>`
+                ${podeExcluir ? `<button type="button" class="ghost danger icon" data-ee-del-turno="${e.id}:${g.id}" title="Remover turno">✕</button>` : ''}`
             : '';
           const cabecalho = `<tr class="group"><td class="name">${tagTurno(turno)} <span class="muted">(${g.colaborador_ids.length})</span>${acoesGrupo}</td><td colspan="${dias.length}"></td></tr>`;
           const linhas = g.colaborador_ids.length
             ? g.colaborador_ids
                 .map((id) => {
                   const c = porId(state.colaboradores, id);
-                  const remover = editavel
+                  const remover = podeExcluir
                     ? ` <button type="button" class="chip-remover" data-ee-del-colab="${e.id}:${g.id}:${id}" title="Remover">✕</button>`
                     : '';
                   return `<tr><td class="name">${esc(c?.nome || '—')}${remover}</td>${celulasDe(id)}</tr>`;
@@ -1019,21 +1031,84 @@ function cartaoEscalaExtra(e, editavel) {
   </div>`;
 }
 
+// Pincel da Escala Extraordinária: '' = vazio/folga, turno_id = aquele turno. null = nenhum pincel armado.
+let eePintando = false;
+document.addEventListener('mouseup', () => (eePintando = false));
+
+// Barra "Pincel" + trava de exclusão da Escala Extraordinária — mesmo princípio da legenda da Escala normal
+// (clicar arma o pincel; clique ou arraste numa célula aplica na hora).
+function legendaExtra() {
+  const chips = [{ id: '', codigo: '', nome: 'Vazio / folga', cor: '#d9534f' }, ...state.turnos.filter((t) => t.ativo)]
+    .map(
+      (t) =>
+        `<button type="button" data-ee-pincel="${esc(t.id)}" class="pincel-cor ${
+          state.eePincel === t.id ? 'active' : ''
+        }" title="${esc(t.id === '' ? t.nome : `${t.codigo} — ${t.nome}`)}" aria-label="${esc(t.nome)}"><span class="quadrado" style="--q:${esc(
+          t.cor || '#9ca3af'
+        )}"></span></button>`
+    )
+    .join('');
+  return `<div class="legend ee-legend">
+    <button type="button" class="${state.eeEditando ? 'primary' : ''}" data-ee-lock>${
+      state.eeEditando ? '✓ Concluir edição' : '✎ Habilitar exclusão'
+    }</button>
+    <span class="legend-sep"></span>
+    <span class="label">Pincel:</span>${chips}
+    ${state.eePincel !== null ? '<span class="label" style="margin-left:8px">Pincel ativo — Esc para sair</span>' : ''}
+  </div>`;
+}
+
+// Aplica um turno (ou '' = vazio/folga) numa célula da Escala Extraordinária — clique direto ou arraste do
+// pincel, igual à Escala normal: atualiza a tela na hora e manda pro servidor em segundo plano.
+async function aplicarCelulaExtra(eeId, colaboradorId, data, turnoId) {
+  const ee = (state.escalasExtraDoMes || []).find((x) => x.id === eeId);
+  if (!ee) return;
+  const v = turnoId === '' ? null : turnoId;
+  const i = ee.celulas.findIndex((c) => c.colaborador_id === colaboradorId && c.data === data);
+  const atual = i >= 0 ? ee.celulas[i].turno_id : null;
+  if (atual === v) return;
+  if (i >= 0) ee.celulas.splice(i, 1);
+  if (v) ee.celulas.push({ colaborador_id: colaboradorId, data, turno_id: v });
+  renderGradeExtra($('#grid'));
+  try {
+    await api('PUT', `/escalas-extraordinarias/${eeId}/celula`, { colaborador_id: colaboradorId, data, turno_id: v });
+  } catch (err) {
+    toast(err.message, true);
+    await carregarEscalaExtraDoMes();
+    renderGradeExtra($('#grid'));
+  }
+}
+
+function pintarExtra(td) {
+  const [eeId, colabId, data] = td.dataset.eeCel.split(':');
+  aplicarCelulaExtra(Number(eeId), Number(colabId), data, state.eePincel);
+}
+
 // Grade dia-a-dia (mesmo padrão visual da Escala normal: dias em coluna, colaboradores em linha) das
 // escalas extraordinárias do mês. Admin edita direto na tela; quem não é admin só vê.
 function renderGradeExtra(wrap) {
   const lista = state.escalasExtraDoMes || [];
   const admin = !!state.usuario?.admin;
-  if (!lista.length) {
-    wrap.innerHTML = `<div class="empty">Nenhuma escala extraordinária neste mês.${
-      admin ? ' <button class="ghost" data-ee-criar>+ Criar escala extraordinária</button>' : ' Peça a um admin pra criar uma.'
-    }</div>`;
-  } else {
-    wrap.innerHTML = lista.map((e) => cartaoEscalaExtra(e, admin)).join('');
-  }
+  const podeExcluir = admin && state.eeEditando;
+  const cartoes = !lista.length
+    ? `<div class="empty">Nenhuma escala extraordinária neste mês.${
+        admin ? ' <button class="ghost" data-ee-criar>+ Criar escala extraordinária</button>' : ' Peça a um admin pra criar uma.'
+      }</div>`
+    : lista.map((e) => cartaoEscalaExtra(e, admin, podeExcluir)).join('');
+  wrap.innerHTML = (admin ? legendaExtra() : '') + cartoes;
   if (!admin) return;
   const recarregar = () => carregarEscalaExtraDoMes().then(() => renderGradeExtra(wrap));
   wrap.onclick = (e) => {
+    if (e.target.closest('[data-ee-lock]')) {
+      state.eeEditando = !state.eeEditando;
+      return renderGradeExtra(wrap);
+    }
+    const pincelBtn = e.target.closest('[data-ee-pincel]');
+    if (pincelBtn) {
+      const v = pincelBtn.dataset.eePincel === '' ? '' : Number(pincelBtn.dataset.eePincel);
+      state.eePincel = state.eePincel === v ? null : v;
+      return renderGradeExtra(wrap);
+    }
     if (e.target.closest('[data-ee-criar]')) return dialogNovaEscalaExtra();
     const addTurnoBtn = e.target.closest('[data-ee-add-turno]');
     if (addTurnoBtn) {
@@ -1068,10 +1143,13 @@ function renderGradeExtra(wrap) {
       const [eeId, turnoGrupoId] = addBtn.dataset.eeAddColab.split(':');
       const ee = state.escalasExtraDoMes.find((x) => x.id === Number(eeId));
       const usados = new Set(ee.turnos.flatMap((g) => g.colaborador_ids));
-      const disponiveis = state.colaboradores.filter((c) => !usados.has(c.id)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      const disponiveis = state.colaboradores
+        .filter((c) => !usados.has(c.id))
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
       return abrirSeletorUnico(addBtn, {
         itens: disponiveis,
         rotulo: (c) => c.nome,
+        detalhe: (c) => [porId(state.torres, c.torre_id)?.codigo, porId(state.turnos, c.turno_id)?.codigo].filter(Boolean).join(' · '),
         busca: true,
         vazio: 'Nenhum colaborador disponível (todos já estão em algum turno desta escala extraordinária)',
         async aoEscolher(c) {
@@ -1095,6 +1173,7 @@ function renderGradeExtra(wrap) {
     }
     const td = e.target.closest('[data-ee-cel]');
     if (td) {
+      if (state.eePincel !== null) return; // já aplicado no mousedown
       const [eeId, colabId, data] = td.dataset.eeCel.split(':');
       const itens = [{ id: null, codigo: '', nome: 'Vazio / folga' }, ...state.turnos.filter((t) => t.ativo)];
       abrirSeletorUnico(td, {
@@ -1111,6 +1190,23 @@ function renderGradeExtra(wrap) {
       });
     }
   };
+  // Arrastar pinta a célula sob o mouse com o pincel armado — ligado uma vez só (wrap persiste entre renders).
+  if (!wrap.dataset.eeArrastoLigado) {
+    wrap.dataset.eeArrastoLigado = '1';
+    wrap.addEventListener('mousedown', (e) => {
+      if (!state.usuario?.admin || state.eePincel === null || e.button !== 0) return;
+      const td = e.target.closest('[data-ee-cel]');
+      if (!td) return;
+      e.preventDefault();
+      eePintando = true;
+      pintarExtra(td);
+    });
+    wrap.addEventListener('mouseover', (e) => {
+      if (!eePintando) return;
+      const td = e.target.closest('[data-ee-cel]');
+      if (td) pintarExtra(td);
+    });
+  }
 }
 
 function renderGrade() {
@@ -2567,16 +2663,20 @@ function abrirSeletorMesas(ancora, { selecionados, aoAplicar }) {
 // Popover de escolha única: clicar num item já aplica, sem OK/Cancelar. Mesmo shell visual/posicionamento
 // do filtro/seletor de mesas acima; usado pela Escala Extraordinária (escolher turno, escolher colaborador).
 // Popover de escolha única com busca por texto quando há itens suficientes pra valer a pena.
-function abrirSeletorUnico(ancora, { itens, rotulo, vazio, aoEscolher, busca: comBusca = itens.length > 6 }) {
+// detalhe(it), se passado, aparece como uma 2ª linha discreta embaixo do rótulo (ex.: torre/turno do
+// colaborador), pra distinguir homônimos. Com busca, Enter escolhe o item quando só um resultado sobra.
+function abrirSeletorUnico(ancora, { itens, rotulo, detalhe, vazio, aoEscolher, busca: comBusca = itens.length > 6 }) {
   fecharFiltro();
   const p = document.createElement('div');
   p.className = 'filtro-painel';
+  const linhaItem = (it) =>
+    `<button type="button" class="ghost" data-i="${itens.indexOf(it)}"><span>${esc(rotulo(it))}</span>${
+      detalhe && detalhe(it) ? `<small class="muted">${esc(detalhe(it))}</small>` : ''
+    }</button>`;
   const desenharLista = (termo) => {
     const t = termo.trim().toLowerCase();
     const visiveis = t ? itens.filter((it) => rotulo(it).toLowerCase().includes(t)) : itens;
-    return visiveis.length
-      ? visiveis.map((it) => `<button type="button" class="ghost" data-i="${itens.indexOf(it)}">${esc(rotulo(it))}</button>`).join('')
-      : `<div class="muted filtro-vazio">${esc(vazio || 'Nenhum resultado')}</div>`;
+    return visiveis.length ? visiveis.map(linhaItem).join('') : `<div class="muted filtro-vazio">${esc(vazio || 'Nenhum resultado')}</div>`;
   };
   p.innerHTML = `
     ${comBusca ? '<input type="search" placeholder="Pesquisar" data-busca>' : ''}
@@ -2585,7 +2685,15 @@ function abrirSeletorUnico(ancora, { itens, rotulo, vazio, aoEscolher, busca: co
   painelFiltro = p;
   const lista = p.querySelector('[data-lista]');
   const campoBusca = p.querySelector('[data-busca]');
-  if (campoBusca) campoBusca.oninput = () => (lista.innerHTML = desenharLista(campoBusca.value));
+  if (campoBusca) {
+    campoBusca.oninput = () => (lista.innerHTML = desenharLista(campoBusca.value));
+    // Enter escolhe direto quando a busca já deixou só um resultado — evita precisar clicar.
+    campoBusca.onkeydown = (e) => {
+      if (e.key !== 'Enter') return;
+      const botoes = lista.querySelectorAll('[data-i]');
+      if (botoes.length === 1) botoes[0].click();
+    };
+  }
   p.onclick = (e) => {
     const b = e.target.closest('[data-i]');
     if (!b) return;

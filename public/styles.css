@@ -217,6 +217,13 @@ table.extra-grade thead th { background: #1f3b64; color: #fff; }
 table.extra-grade thead th small { color: #c9d6ea; }
 table.extra-grade td.ee-cel { cursor: pointer; }
 table.extra-grade td.ee-cel:hover { outline: 2px solid var(--primary); outline-offset: -2px; }
+/* Sem turno = folga/vermelho; com turno = trabalho/verde — mesmas cores da Escala normal (td.p-folga/p-trab). */
+table.extra-grade td.ee-folga { background: #e6a5a5; }
+table.extra-grade td.ee-trab { background: #c6efce; }
+@media (prefers-color-scheme: dark) {
+  table.extra-grade td.ee-folga { background: #5c2626; }
+  table.extra-grade td.ee-trab { background: #1f4d2b; }
+}
 .chip-remover { border: 0; background: transparent; color: inherit; padding: 0; margin-left: 2px; cursor: pointer; font-size: 11px; line-height: 1; }
 .segmented { display: inline-flex; align-items: center; gap: 0; }
 .segmented > span { color: var(--muted); font-size: 12px; margin-right: 8px; }
@@ -490,6 +497,8 @@ th.th-filtro { white-space: nowrap; }
   font-size: 13px; text-transform: none; font-weight: 400; text-align: left;
 }
 .filtro-painel > button.ghost { justify-content: flex-start; padding: 5px 8px; font-size: 13px; }
+.filtro-lista button.ghost { display: flex; flex-direction: column; align-items: flex-start; gap: 0; width: 100%; }
+.filtro-lista button.ghost small { font-size: 11px; }
 .filtro-painel > button.ghost.ativo { color: var(--primary); font-weight: 600; }
 .filtro-painel hr { border: 0; border-top: 1px solid var(--border); margin: 2px 0; width: 100%; }
 .filtro-painel input[type=search] { width: 100%; margin: 4px 0 2px; }
