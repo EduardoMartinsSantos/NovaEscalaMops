@@ -960,7 +960,15 @@ const periodoExtraFmt = (e) => {
   return `${f(e.data_inicio)} a ${f(e.data_fim)}`;
 };
 
-// Cartões "turno → pessoas" das escalas extraordinárias do mês — nunca uma grade dia-a-dia.
+// Todos os dias (YYYY-MM-DD) do período da escala extraordinária, inclusive.
+function diasExtra(e) {
+  const dias = [];
+  for (let d = e.data_inicio; d <= e.data_fim; d = somarDias(d, 1)) dias.push(d);
+  return dias;
+}
+
+// Grade dia-a-dia (mesmo padrão visual da Escala normal: dias em coluna, colaboradores em linha) das
+// escalas extraordinárias do mês — só leitura aqui; editar é em Cadastros → Escala Extraordinária.
 function renderGradeExtra(wrap) {
   const lista = state.escalasExtraDoMes || [];
   if (!lista.length) {
@@ -969,21 +977,29 @@ function renderGradeExtra(wrap) {
   }
   wrap.innerHTML = lista
     .map((e) => {
-      const grupos = e.turnos.length
-        ? e.turnos
-            .map((t) => {
-              const turno = porId(state.turnos, t.turno_id);
-              const nomes = t.colaborador_ids.map((id) => porId(state.colaboradores, id)?.nome).filter(Boolean);
-              return `<div class="extra-grupo">
-                <div class="extra-grupo-head">${tagTurno(turno)} <span class="muted">(${nomes.length})</span></div>
-                <div class="extra-nomes">${nomes.length ? nomes.map(esc).join(', ') : '<span class="muted">Ninguém ainda</span>'}</div>
-              </div>`;
+      const dias = diasExtra(e);
+      const cel = new Map(e.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
+      const linhas = e.colaborador_ids.length
+        ? e.colaborador_ids
+            .map((id) => {
+              const c = porId(state.colaboradores, id);
+              const celulas = dias
+                .map((d) => {
+                  const x = cel.get(`${id}|${d}`);
+                  const turno = x ? porId(state.turnos, x.turno_id) : null;
+                  return `<td class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${turno ? tagTurno(turno) : ''}</td>`;
+                })
+                .join('');
+              return `<tr><td class="name">${esc(c?.nome || '—')}</td>${celulas}</tr>`;
             })
             .join('')
-        : '<p class="muted">Nenhum turno adicionado ainda.</p>';
+        : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
+      const cabDias = dias
+        .map((d) => `<th class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
+        .join('');
       return `<div class="card extra-card">
         <div class="extra-card-head"><strong>${esc(e.nome || 'Escala extraordinária')}</strong><span class="muted">${esc(periodoExtraFmt(e))}</span></div>
-        ${grupos}
+        <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${linhas}</tbody></table></div>
       </div>`;
     })
     .join('');
@@ -4100,14 +4116,13 @@ function viewEscalasExtraordinarias(alvo = main) {
     </div>
     <div class="card list-wrap" data-lista>${
       lista.length
-        ? `<table class="list"><thead><tr><th>Nome</th><th>Período</th><th>Turnos</th><th>Pessoas</th><th></th></tr></thead>
+        ? `<table class="list"><thead><tr><th>Nome</th><th>Período</th><th>Pessoas</th><th></th></tr></thead>
           <tbody>${lista
             .map(
               (e) => `<tr>
                 <td>${esc(e.nome || '—')}</td>
                 <td class="nowrap">${esc(periodoExtraFmt(e))}</td>
-                <td>${e.turnos.length}</td>
-                <td>${e.turnos.reduce((n, t) => n + t.colaborador_ids.length, 0)}</td>
+                <td>${e.colaborador_ids.length}</td>
                 <td class="actions">
                   <button class="ghost" data-ee-editar="${e.id}">Editar</button>
                   <button class="ghost danger icon" data-ee-excluir="${e.id}" title="Excluir">✕</button>
@@ -4165,41 +4180,41 @@ function dialogEscalaExtra(ee) {
   dialogForm.onsubmit = (e) => e.preventDefault();
   let atual = ee;
   const render = () => {
-    const usados = new Set(atual.turnos.flatMap((t) => t.colaborador_ids));
-    const turnosDisponiveis = state.turnos.filter((t) => t.ativo && !atual.turnos.some((g) => g.turno_id === t.id));
+    const dias = diasExtra(atual);
+    const cel = new Map(atual.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
+    const linhas = atual.colaborador_ids.length
+      ? atual.colaborador_ids
+          .map((id) => {
+            const c = porId(state.colaboradores, id);
+            const celulas = dias
+              .map((d) => {
+                const x = cel.get(`${id}|${d}`);
+                const turno = x ? porId(state.turnos, x.turno_id) : null;
+                return `<td class="ee-cel ${[0, 6].includes(diaSemana(d)) ? 'we' : ''}" data-ee-cel="${id}:${d}">${
+                  turno ? tagTurno(turno) : ''
+                }</td>`;
+              })
+              .join('');
+            return `<tr><td class="name">${esc(c?.nome || '—')} <button type="button" class="chip-remover" data-ee-del-colab="${id}" title="Remover">✕</button></td>${celulas}</tr>`;
+          })
+          .join('')
+      : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
+    const cabDias = dias
+      .map(
+        (d) =>
+          `<th class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`
+      )
+      .join('');
     dialogForm.innerHTML = `
       <header class="bh-head">
         <h2>${esc(atual.nome || 'Escala extraordinária')}</h2>
         <p class="muted">${esc(periodoExtraFmt(atual))}</p>
       </header>
       <div class="body">
-        <div class="bh-acao-botoes"><button type="button" class="primary" data-ee-add-turno ${
-          turnosDisponiveis.length ? '' : 'disabled'
-        }>+ Adicionar turno</button></div>
+        <div class="bh-acao-botoes"><button type="button" class="primary" data-ee-add-colab>+ Adicionar colaborador</button></div>
         <p class="form-error" data-ee-erro></p>
-        ${
-          atual.turnos.length
-            ? atual.turnos
-                .map((g) => {
-                  const turno = porId(state.turnos, g.turno_id);
-                  return `<section class="extra-grupo-edicao">
-                    <div class="extra-grupo-head">${tagTurno(turno)}
-                      <button type="button" class="ghost danger icon" data-ee-del-turno="${g.id}" title="Remover turno">✕</button>
-                    </div>
-                    <div class="extra-nomes-edicao">${
-                      g.colaborador_ids
-                        .map((id) => {
-                          const c = porId(state.colaboradores, id);
-                          return `<span class="tag">${esc(c?.nome || '—')} <button type="button" class="chip-remover" data-ee-del-colab="${g.id}:${id}" title="Remover">✕</button></span>`;
-                        })
-                        .join('') || '<span class="muted">Ninguém ainda</span>'
-                    }</div>
-                    <button type="button" class="ghost" data-ee-add-colab="${g.id}">+ Adicionar analista</button>
-                  </section>`;
-                })
-                .join('')
-            : '<p class="muted">Nenhum turno adicionado ainda.</p>'
-        }
+        <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${linhas}</tbody></table></div>
+        <p class="hint">Clique numa célula pra escolher o turno daquele dia (ou deixar vazio/folga). Nenhuma regra de torre/turno normal se aplica aqui.</p>
       </div>
       <footer><button type="button" data-cancel>Fechar</button></footer>`;
     $('[data-cancel]', dialogForm).onclick = () => dialog.close();
@@ -4209,62 +4224,55 @@ function dialogEscalaExtra(ee) {
       atual = await api('GET', `/escalas-extraordinarias/${atual.id}`);
       render();
     };
-    const addTurnoBtn = dialogForm.querySelector('[data-ee-add-turno]');
-    if (addTurnoBtn && turnosDisponiveis.length) {
-      addTurnoBtn.onclick = (e) => {
-        abrirSeletorUnico(e.currentTarget, {
-          itens: turnosDisponiveis,
-          rotulo: (t) => `${t.codigo} — ${t.nome}`,
-          async aoEscolher(t) {
-            try {
-              await api('POST', `/escalas-extraordinarias/${atual.id}/turnos`, { turno_id: t.id });
-              await recarregar();
-            } catch (err) {
-              marcarErro(err.message);
-            }
-          },
-        });
-      };
-    }
-    dialogForm.querySelectorAll('[data-ee-del-turno]').forEach((btn) => {
-      btn.onclick = async () => {
-        if (!confirm('Remover este turno e todo mundo dentro dele desta escala extraordinária?')) return;
-        try {
-          await api('DELETE', `/escalas-extraordinarias/${atual.id}/turnos/${btn.dataset.eeDelTurno}`);
-          await recarregar();
-        } catch (err) {
-          marcarErro(err.message);
-        }
-      };
-    });
-    dialogForm.querySelectorAll('[data-ee-add-colab]').forEach((btn) => {
-      btn.onclick = (e) => {
-        const grupoId = Number(btn.dataset.eeAddColab);
-        const disponiveis = state.colaboradores.filter((c) => !usados.has(c.id)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-        abrirSeletorUnico(e.currentTarget, {
-          itens: disponiveis,
-          rotulo: (c) => c.nome,
-          vazio: 'Nenhum colaborador disponível (todos já estão em algum turno desta escala extraordinária)',
-          async aoEscolher(c) {
-            try {
-              await api('POST', `/escalas-extraordinarias/${atual.id}/turnos/${grupoId}/colaboradores`, { colaborador_id: c.id });
-              await recarregar();
-            } catch (err) {
-              marcarErro(err.message);
-            }
-          },
-        });
-      };
-    });
+    dialogForm.querySelector('[data-ee-add-colab]').onclick = (e) => {
+      const disponiveis = state.colaboradores
+        .filter((c) => !atual.colaborador_ids.includes(c.id))
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      abrirSeletorUnico(e.currentTarget, {
+        itens: disponiveis,
+        rotulo: (c) => c.nome,
+        vazio: 'Nenhum colaborador disponível (todos já foram adicionados)',
+        async aoEscolher(c) {
+          try {
+            await api('POST', `/escalas-extraordinarias/${atual.id}/colaboradores`, { colaborador_id: c.id });
+            await recarregar();
+          } catch (err) {
+            marcarErro(err.message);
+          }
+        },
+      });
+    };
     dialogForm.querySelectorAll('[data-ee-del-colab]').forEach((btn) => {
       btn.onclick = async () => {
-        const [grupoId, colabId] = btn.dataset.eeDelColab.split(':');
+        if (!confirm('Remover este colaborador? As células dele nesta escala extraordinária somem junto.')) return;
         try {
-          await api('DELETE', `/escalas-extraordinarias/${atual.id}/turnos/${grupoId}/colaboradores/${colabId}`);
+          await api('DELETE', `/escalas-extraordinarias/${atual.id}/colaboradores/${btn.dataset.eeDelColab}`);
           await recarregar();
         } catch (err) {
           marcarErro(err.message);
         }
+      };
+    });
+    dialogForm.querySelectorAll('[data-ee-cel]').forEach((td) => {
+      td.onclick = (e) => {
+        const [colaboradorIdTxt, data] = td.dataset.eeCel.split(':');
+        const itens = [{ id: null, codigo: '', nome: 'Vazio / folga' }, ...state.turnos.filter((t) => t.ativo)];
+        abrirSeletorUnico(e.currentTarget, {
+          itens,
+          rotulo: (t) => (t.id === null ? t.nome : `${t.codigo} — ${t.nome}`),
+          async aoEscolher(t) {
+            try {
+              await api('PUT', `/escalas-extraordinarias/${atual.id}/celula`, {
+                colaborador_id: Number(colaboradorIdTxt),
+                data,
+                turno_id: t.id,
+              });
+              await recarregar();
+            } catch (err) {
+              marcarErro(err.message);
+            }
+          },
+        });
       };
     });
   };

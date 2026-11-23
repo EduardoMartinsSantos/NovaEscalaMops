@@ -208,11 +208,11 @@ table.grid.planilha td.p-folga-banco { background: var(--roxo-banco); color: #4c
 .legend button.active { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
 .extra-card { margin-bottom: 14px; padding: 14px; display: grid; gap: 10px; }
 .extra-card-head { display: flex; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-.extra-grupo { display: grid; gap: 4px; }
-.extra-grupo-head { display: flex; align-items: center; gap: 6px; }
-.extra-nomes { font-size: 13px; color: var(--text); padding-left: 2px; }
-.extra-grupo-edicao { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; }
-.extra-nomes-edicao { display: flex; flex-wrap: wrap; gap: 6px; }
+.extra-grade-wrap { overflow: auto; max-width: 100%; }
+table.extra-grade th, table.extra-grade td { height: 24px; min-width: 52px; font-size: 11px; text-align: center; padding: 2px 6px; }
+table.extra-grade .name { text-align: left; white-space: nowrap; }
+table.extra-grade td.ee-cel { cursor: pointer; }
+table.extra-grade td.ee-cel:hover { outline: 2px solid var(--primary); outline-offset: -2px; }
 .chip-remover { border: 0; background: transparent; color: inherit; padding: 0; margin-left: 2px; cursor: pointer; font-size: 11px; line-height: 1; }
 .segmented { display: inline-flex; align-items: center; gap: 0; }
 .segmented > span { color: var(--muted); font-size: 12px; margin-right: 8px; }
