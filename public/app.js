@@ -126,6 +126,7 @@ const state = {
   pincel: null, // valor aplicado direto ao clicar/arrastar nas células
   eeEditando: false, // trava exclusão de turno/colaborador na Escala Extraordinária; "Habilitar exclusão" libera
   eePincel: null, // turno_id ('' = vazio/folga) aplicado direto ao clicar/arrastar nas células da Escala Extraordinária
+  filtrosEscalaExtra: {}, // filtro por coluna da Escala Extraordinária (hoje só "torre"), estilo Excel
   bancoHoras: null, // lançamentos do banco de horas (carregado ao abrir a tela)
   bhSaldos: null, // saldos iniciais mensais do banco de horas ({ colaborador_id, mes, saldo_inicial })
   filtroBH: { busca: '' },
@@ -979,9 +980,17 @@ function diasExtra(e) {
 // botão "+ Adicionar colaborador" e clique em qualquer célula escolhem turno/pessoa na hora (ou pelo pincel).
 // "editavel" libera adicionar turno/colaborador e pintar células; "podeExcluir" (edição habilitada) também
 // libera remover turno/colaborador.
+// Torre do colaborador passa pelo filtro "Torre" (estilo Excel, igual à Escala normal) — sem filtro
+// ativo, todo mundo passa.
+function passaFiltroExtra(c) {
+  const sel = state.filtrosEscalaExtra.torre;
+  return !sel || sel.has(codigoDe(state.torres, c?.torre_id));
+}
+
 function cartaoEscalaExtra(e, editavel, podeExcluir) {
   const dias = diasExtra(e);
   const cel = new Map(e.celulas.map((c) => [`${c.colaborador_id}|${c.data}`, c]));
+  const colTorre = (c) => `<td class="torre-col">${tagTorre(porId(state.torres, c?.torre_id))}</td>`;
   const celulasDe = (id) =>
     dias
       .map((d) => {
@@ -999,26 +1008,63 @@ function cartaoEscalaExtra(e, editavel, podeExcluir) {
     ? e.turnos
         .map((g) => {
           const turno = porId(state.turnos, g.turno_id);
+          const membros = g.colaborador_ids.filter((id) => passaFiltroExtra(porId(state.colaboradores, id)));
           const acoesGrupo = editavel
             ? ` <button type="button" class="ghost" data-ee-add-colab="${e.id}:${g.id}">+ Adicionar colaborador</button>
                 ${podeExcluir ? `<button type="button" class="ghost danger icon" data-ee-del-turno="${e.id}:${g.id}" title="Remover turno">✕</button>` : ''}`
             : '';
-          const cabecalho = `<tr class="group"><td class="name">${tagTurno(turno)} <span class="muted">(${g.colaborador_ids.length})</span>${acoesGrupo}</td><td colspan="${dias.length}"></td></tr>`;
-          const linhas = g.colaborador_ids.length
-            ? g.colaborador_ids
+          const cabecalho = `<tr class="group"><td class="name">${tagTurno(turno)} <span class="muted">(${membros.length})</span>${acoesGrupo}</td><td class="torre-col"></td><td colspan="${dias.length}"></td></tr>`;
+          const linhas = membros.length
+            ? membros
                 .map((id) => {
                   const c = porId(state.colaboradores, id);
+                  const alca = editavel ? '<span class="arrastar" draggable="true" title="Arraste para reordenar dentro do turno">⠿</span> ' : '';
                   const remover = podeExcluir
                     ? ` <button type="button" class="chip-remover" data-ee-del-colab="${e.id}:${g.id}:${id}" title="Remover">✕</button>`
                     : '';
-                  return `<tr><td class="name">${esc(c?.nome || '—')}${remover}</td>${celulasDe(id)}</tr>`;
+                  return `<tr data-colab="${id}" data-ee-grupo="${e.id}:${g.id}"><td class="name">${alca}${esc(c?.nome || '—')}${remover}</td>${colTorre(c)}${celulasDe(id)}</tr>`;
                 })
                 .join('')
-            : `<tr><td class="name muted">Ninguém ainda</td><td colspan="${dias.length}"></td></tr>`;
+            : `<tr><td class="name muted">Ninguém ainda</td><td class="torre-col"></td><td colspan="${dias.length}"></td></tr>`;
           return cabecalho + linhas;
         })
         .join('')
-    : `<tr><td class="name muted">Nenhum turno adicionado ainda.</td><td colspan="${dias.length}"></td></tr>`;
+    : `<tr><td class="name muted">Nenhum turno adicionado ainda.</td><td class="torre-col"></td><td colspan="${dias.length}"></td></tr>`;
+
+  // Sobreaviso: seção própria, independente dos turnos — mesmo conceito da Escala normal (linha por
+  // colaborador, horas lançadas por dia), sem regra de torre/mês (tudo manual, igual ao resto da Extraordinária).
+  const saIds = (e.sobreaviso?.colaborador_ids || []).filter((id) => passaFiltroExtra(porId(state.colaboradores, id)));
+  const saCel = new Map((e.sobreaviso?.celulas || []).map((c) => [`${c.colaborador_id}|${c.data}`, c]));
+  const saCelulasDe = (id) =>
+    dias
+      .map((d) => {
+        const x = saCel.get(`${id}|${d}`);
+        const we = [0, 6].includes(diaSemana(d)) ? 'we' : '';
+        const corCel = x ? 'ee-trab' : 'ee-folga';
+        return editavel
+          ? `<td class="${we} ${corCel} ee-sa-cel" data-ee-sa-cel="${e.id}:${id}:${d}">${x ? fmtHoras(x.horas) : ''}</td>`
+          : `<td class="${we} ${corCel}">${x ? fmtHoras(x.horas) : ''}</td>`;
+      })
+      .join('');
+  const acoesSa = editavel ? ` <button type="button" class="ghost" data-ee-add-sa="${e.id}">+ Adicionar</button>` : '';
+  const sobreaviso =
+    editavel || saIds.length
+      ? `<tr class="group sa-group"><td class="name">Sobreaviso <span class="muted">(${saIds.length})</span>${acoesSa}</td><td class="torre-col"></td><td colspan="${dias.length}"></td></tr>` +
+        (saIds.length
+          ? saIds
+              .map((id) => {
+                const c = porId(state.colaboradores, id);
+                const remover = podeExcluir
+                  ? ` <button type="button" class="chip-remover" data-ee-del-sa="${e.id}:${id}" title="Remover">✕</button>`
+                  : '';
+                return `<tr><td class="name">${esc(c?.nome || '—')}${remover}</td>${colTorre(c)}${saCelulasDe(id)}</tr>`;
+              })
+              .join('')
+          : editavel
+            ? `<tr><td class="name muted">Ninguém de sobreaviso ainda</td><td class="torre-col"></td><td colspan="${dias.length}"></td></tr>`
+            : '')
+      : '';
+
   const cabDias = dias
     .map((d) => `<th class="${[0, 6].includes(diaSemana(d)) ? 'we' : ''}">${SEMANA_ABREV[diaSemana(d)]}<small>${d.slice(8)}/${d.slice(5, 7)}</small></th>`)
     .join('');
@@ -1027,7 +1073,10 @@ function cartaoEscalaExtra(e, editavel, podeExcluir) {
       <strong>${esc(e.nome || 'Escala extraordinária')}</strong><span class="muted">${esc(periodoExtraFmt(e))}</span>
       ${editavel ? `<button class="ghost" data-ee-add-turno="${e.id}">+ Adicionar turno</button>` : ''}
     </div>
-    <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th>${cabDias}</tr></thead><tbody>${grupos}</tbody></table></div>
+    <div class="extra-grade-wrap"><table class="grid extra-grade"><thead><tr><th class="name">Nome</th><th class="th-filtro">Torre ${botaoFiltro(
+      'torre',
+      state.filtrosEscalaExtra
+    )}</th>${cabDias}</tr></thead><tbody>${grupos}${sobreaviso}</tbody></table></div>
   </div>`;
 }
 
@@ -1084,6 +1133,42 @@ function pintarExtra(td) {
   aplicarCelulaExtra(Number(eeId), Number(colabId), data, state.eePincel);
 }
 
+// Lança/remove horas de sobreaviso num dia — clique liga (horasPontuais(), já usado pelo sobreaviso
+// normal) ou desliga, sem popup. Mesma atualização otimista das células de turno.
+async function aplicarCelulaSobreavisoExtra(eeId, colaboradorId, data, horas) {
+  const ee = (state.escalasExtraDoMes || []).find((x) => x.id === eeId);
+  if (!ee) return;
+  const celulas = ee.sobreaviso.celulas;
+  const i = celulas.findIndex((c) => c.colaborador_id === colaboradorId && c.data === data);
+  if (i >= 0) celulas.splice(i, 1);
+  if (horas) celulas.push({ colaborador_id: colaboradorId, data, horas });
+  renderGradeExtra($('#grid'));
+  try {
+    await api('PUT', `/escalas-extraordinarias/${eeId}/sobreaviso-celula`, { colaborador_id: colaboradorId, data, horas });
+  } catch (err) {
+    toast(err.message, true);
+    await carregarEscalaExtraDoMes();
+    renderGradeExtra($('#grid'));
+  }
+}
+
+// Nova ordem (arrastar e soltar) dos membros de um grupo de turno — atualização otimista + PUT, igual
+// ao padrão das outras ações da Escala Extraordinária.
+async function reordenarColaboradorExtra(eeId, turnoGrupoId, ids) {
+  const ee = (state.escalasExtraDoMes || []).find((x) => x.id === Number(eeId));
+  const grupo = ee?.turnos.find((g) => g.id === Number(turnoGrupoId));
+  if (!grupo) return;
+  grupo.colaborador_ids = ids;
+  renderGradeExtra($('#grid'));
+  try {
+    await api('PUT', `/escalas-extraordinarias/${eeId}/turnos/${turnoGrupoId}/ordem`, { ids });
+  } catch (err) {
+    toast(err.message, true);
+    await carregarEscalaExtraDoMes();
+    renderGradeExtra($('#grid'));
+  }
+}
+
 // Grade dia-a-dia (mesmo padrão visual da Escala normal: dias em coluna, colaboradores em linha) das
 // escalas extraordinárias do mês. Admin edita direto na tela; quem não é admin só vê.
 function renderGradeExtra(wrap) {
@@ -1108,6 +1193,25 @@ function renderGradeExtra(wrap) {
       const v = pincelBtn.dataset.eePincel === '' ? '' : Number(pincelBtn.dataset.eePincel);
       state.eePincel = state.eePincel === v ? null : v;
       return renderGradeExtra(wrap);
+    }
+    const filtroBtn = e.target.closest('[data-filtro]');
+    if (filtroBtn) {
+      const chave = filtroBtn.dataset.filtro;
+      const assignados = state.escalasExtraDoMes.flatMap((x) => [
+        ...x.turnos.flatMap((g) => g.colaborador_ids),
+        ...(x.sobreaviso?.colaborador_ids || []),
+      ]);
+      const base = assignados.map((id) => codigoDe(state.torres, porId(state.colaboradores, id)?.torre_id));
+      return abrirFiltro(filtroBtn, {
+        titulo: 'Torre',
+        valores: base,
+        selecionados: state.filtrosEscalaExtra[chave],
+        aoAplicar(sel) {
+          if (sel) state.filtrosEscalaExtra[chave] = sel;
+          else delete state.filtrosEscalaExtra[chave];
+          renderGradeExtra(wrap);
+        },
+      });
     }
     if (e.target.closest('[data-ee-criar]')) return dialogNovaEscalaExtra();
     const addTurnoBtn = e.target.closest('[data-ee-add-turno]');
@@ -1141,8 +1245,8 @@ function renderGradeExtra(wrap) {
     const addBtn = e.target.closest('[data-ee-add-colab]');
     if (addBtn) {
       const [eeId, turnoGrupoId] = addBtn.dataset.eeAddColab.split(':');
-      const ee = state.escalasExtraDoMes.find((x) => x.id === Number(eeId));
-      const usados = new Set(ee.turnos.flatMap((g) => g.colaborador_ids));
+      // Exclusão por TODAS as escalas extraordinárias do mês: uma pessoa não fica em duas ao mesmo tempo.
+      const usados = new Set(state.escalasExtraDoMes.flatMap((x) => x.turnos.flatMap((g) => g.colaborador_ids)));
       const disponiveis = state.colaboradores
         .filter((c) => !usados.has(c.id))
         .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
@@ -1151,7 +1255,7 @@ function renderGradeExtra(wrap) {
         rotulo: (c) => c.nome,
         detalhe: (c) => [porId(state.torres, c.torre_id)?.codigo, porId(state.turnos, c.turno_id)?.codigo].filter(Boolean).join(' · '),
         busca: true,
-        vazio: 'Nenhum colaborador disponível (todos já estão em algum turno desta escala extraordinária)',
+        vazio: 'Nenhum colaborador disponível (todos já estão em alguma escala extraordinária deste mês)',
         async aoEscolher(c) {
           try {
             await api('POST', `/escalas-extraordinarias/${eeId}/turnos/${turnoGrupoId}/colaboradores`, { colaborador_id: c.id });
@@ -1188,6 +1292,43 @@ function renderGradeExtra(wrap) {
           }
         },
       });
+      return;
+    }
+    const addSaBtn = e.target.closest('[data-ee-add-sa]');
+    if (addSaBtn) {
+      const eeId = Number(addSaBtn.dataset.eeAddSa);
+      const ee = state.escalasExtraDoMes.find((x) => x.id === eeId);
+      const usados = new Set(ee.sobreaviso?.colaborador_ids || []);
+      const disponiveis = state.colaboradores.filter((c) => !usados.has(c.id)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      return abrirSeletorUnico(addSaBtn, {
+        itens: disponiveis,
+        rotulo: (c) => c.nome,
+        detalhe: (c) => [porId(state.torres, c.torre_id)?.codigo, porId(state.turnos, c.turno_id)?.codigo].filter(Boolean).join(' · '),
+        busca: true,
+        vazio: 'Nenhum colaborador disponível',
+        async aoEscolher(c) {
+          try {
+            await api('POST', `/escalas-extraordinarias/${eeId}/sobreaviso`, { colaborador_id: c.id });
+            await recarregar();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        },
+      });
+    }
+    const delSaBtn = e.target.closest('[data-ee-del-sa]');
+    if (delSaBtn) {
+      const [eeId, colabId] = delSaBtn.dataset.eeDelSa.split(':');
+      if (!confirm('Remover este colaborador do sobreaviso? As horas lançadas dele somem junto.')) return;
+      api('DELETE', `/escalas-extraordinarias/${eeId}/sobreaviso/${colabId}`)
+        .then(recarregar)
+        .catch((err) => toast(err.message, true));
+      return;
+    }
+    const saTd = e.target.closest('[data-ee-sa-cel]');
+    if (saTd) {
+      const [eeId, colabId, data] = saTd.dataset.eeSaCel.split(':');
+      aplicarCelulaSobreavisoExtra(Number(eeId), Number(colabId), data, saTd.textContent.trim() ? null : horasPontuais());
     }
   };
   // Arrastar pinta a célula sob o mouse com o pincel armado — ligado uma vez só (wrap persiste entre renders).
@@ -1205,6 +1346,65 @@ function renderGradeExtra(wrap) {
       if (!eePintando) return;
       const td = e.target.closest('[data-ee-cel]');
       if (td) pintarExtra(td);
+    });
+    // Arrastar pela alça ⠿ reordena dentro do mesmo grupo de turno — mesma mecânica de
+    // ligarEventosGrade (Escala normal), só que grava a ordem num grupo da Extraordinária.
+    let arrastoExtra = null;
+    const limparMarcasExtra = () => {
+      wrap.classList.remove('em-arrasto');
+      wrap.querySelectorAll('.drop-acima, .drop-abaixo, .arrastando, .mesmo-grupo').forEach((tr) => tr.classList.remove('drop-acima', 'drop-abaixo', 'arrastando', 'mesmo-grupo'));
+    };
+    wrap.addEventListener('dragstart', (e) => {
+      const alca = e.target.closest?.('.arrastar');
+      const tr = alca?.closest('tr[data-ee-grupo]');
+      if (!tr) return;
+      arrastoExtra = { id: Number(tr.dataset.colab), grupo: tr.dataset.eeGrupo };
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(arrastoExtra.id));
+      const cartao = document.createElement('div');
+      cartao.className = 'cartao-arrasto';
+      cartao.textContent = `⠿ ${porId(state.colaboradores, arrastoExtra.id)?.nome || ''}`;
+      document.body.append(cartao);
+      e.dataTransfer.setDragImage?.(cartao, 16, 16);
+      setTimeout(() => cartao.remove(), 0);
+      requestAnimationFrame(() => {
+        tr.classList.add('arrastando');
+        wrap.classList.add('em-arrasto');
+        wrap.querySelectorAll(`tr[data-ee-grupo="${arrastoExtra.grupo}"]`).forEach((x) => x.classList.add('mesmo-grupo'));
+      });
+    });
+    const linhaAlvoExtra = (e) => {
+      const tr = e.target.closest?.('tr[data-ee-grupo]');
+      return arrastoExtra && tr && tr.dataset.eeGrupo === arrastoExtra.grupo && Number(tr.dataset.colab) !== arrastoExtra.id ? tr : null;
+    };
+    wrap.addEventListener('dragover', (e) => {
+      const tr = linhaAlvoExtra(e);
+      if (!tr) return;
+      e.preventDefault();
+      const r = tr.getBoundingClientRect();
+      const acima = e.clientY < r.top + r.height / 2;
+      wrap.querySelectorAll('.drop-acima, .drop-abaixo').forEach((x) => x !== tr && x.classList.remove('drop-acima', 'drop-abaixo'));
+      tr.classList.toggle('drop-acima', acima);
+      tr.classList.toggle('drop-abaixo', !acima);
+    });
+    wrap.addEventListener('drop', (e) => {
+      const tr = linhaAlvoExtra(e);
+      if (!tr) return;
+      e.preventDefault();
+      const acima = tr.classList.contains('drop-acima');
+      const [eeId, turnoGrupoId] = arrastoExtra.grupo.split(':');
+      const ids = [...wrap.querySelectorAll(`tr[data-ee-grupo="${arrastoExtra.grupo}"]`)]
+        .map((x) => Number(x.dataset.colab))
+        .filter((id) => id !== arrastoExtra.id);
+      const pos = ids.indexOf(Number(tr.dataset.colab)) + (acima ? 0 : 1);
+      ids.splice(pos, 0, arrastoExtra.id);
+      arrastoExtra = null;
+      limparMarcasExtra();
+      reordenarColaboradorExtra(eeId, turnoGrupoId, ids);
+    });
+    wrap.addEventListener('dragend', () => {
+      arrastoExtra = null;
+      limparMarcasExtra();
     });
   }
 }

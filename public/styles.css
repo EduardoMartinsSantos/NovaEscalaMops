@@ -224,6 +224,11 @@ table.extra-grade td.ee-trab { background: #c6efce; }
   table.extra-grade td.ee-folga { background: #5c2626; }
   table.extra-grade td.ee-trab { background: #1f4d2b; }
 }
+table.extra-grade td.ee-sa-cel { cursor: pointer; font-weight: 700; }
+table.extra-grade td.ee-sa-cel:hover { outline: 2px solid var(--primary); outline-offset: -2px; }
+table.extra-grade .torre-col { min-width: 48px; }
+/* Respiro de 10px antes da seção Sobreaviso, separando das linhas de turno sem quebrar a tabela. */
+table.extra-grade tr.sa-group td { border-top: 10px solid var(--surface); }
 .chip-remover { border: 0; background: transparent; color: inherit; padding: 0; margin-left: 2px; cursor: pointer; font-size: 11px; line-height: 1; }
 .segmented { display: inline-flex; align-items: center; gap: 0; }
 .segmented > span { color: var(--muted); font-size: 12px; margin-right: 8px; }
